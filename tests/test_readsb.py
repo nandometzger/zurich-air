@@ -197,3 +197,21 @@ def test_bad_entries_are_skipped_not_fatal():
 def test_not_a_readsb_response(payload):
     with pytest.raises(ReadsbError):
         parse_snapshot(payload, source="x", fetched_at=FETCHED)
+
+
+@pytest.mark.parametrize(
+    ("db_flags", "military", "interesting", "privacy"),
+    [
+        (None, False, False, False),
+        (0, False, False, False),
+        (1, True, False, False),
+        (2, False, True, False),
+        (4, False, False, True),  # PIA
+        (8, False, False, True),  # LADD
+        (9, True, False, True),
+        (-1, False, False, False),  # nonsense
+    ],
+)
+def test_database_flags(db_flags, military, interesting, privacy):
+    a = parse_aircraft(entry(dbFlags=db_flags))
+    assert (a.military, a.interesting, a.privacy) == (military, interesting, privacy)

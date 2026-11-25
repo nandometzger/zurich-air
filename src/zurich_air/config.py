@@ -43,6 +43,7 @@ class AirportConfig:
     code: str = "ZRH"
     latitude: float = 47.458056
     longitude: float = 8.548056
+    elevation_ft: int = 1416
     runways: tuple[tuple[float, float, float, float], ...] = ZRH_RUNWAYS
 
 

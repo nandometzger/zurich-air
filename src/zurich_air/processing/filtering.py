@@ -15,6 +15,14 @@ from zurich_air.processing.geo import distance_km
 # ADS-B emitter categories that are not aircraft: surface vehicles (C1, C2) and obstacles.
 NOT_AIRCRAFT_CATEGORIES = frozenset({"C1", "C2", "C3", "C4", "C5"})
 
+# Some transponders report "airborne" while parked: a helicopter on a pad was seen at
+# 1350 ft and 0.7 kt, 24 km from Zürich Airport (elevation 1416 ft). Nothing that flies
+# stays that slow so close to the ground, so such reports count as on the ground. The
+# margin is generous because the reported altitude is a pressure altitude that drifts with
+# the weather.
+STATIONARY_BELOW_KT = 5.0
+GROUND_MARGIN_FT = 600
+
 
 def dedupe(aircraft: Iterable[Aircraft]) -> list[Aircraft]:
     """One entry per ICAO address: the one with the freshest position, in first-seen order."""
@@ -31,8 +39,21 @@ def is_aircraft(aircraft: Aircraft, config: Config) -> bool:
     return aircraft.category not in NOT_AIRCRAFT_CATEGORIES
 
 
+def is_on_ground(aircraft: Aircraft, config: Config) -> bool:
+    """Reported on the ground, or low and near-stationary despite reporting an altitude."""
+    if aircraft.on_ground:
+        return True
+    speed, altitude = aircraft.ground_speed_kt, aircraft.altitude_ft
+    return (
+        speed is not None
+        and speed < STATIONARY_BELOW_KT
+        and altitude is not None
+        and altitude <= config.airport.elevation_ft + GROUND_MARGIN_FT
+    )
+
+
 def is_airborne_or_wanted(aircraft: Aircraft, config: Config) -> bool:
-    return config.aircraft.include_ground or not aircraft.on_ground
+    return config.aircraft.include_ground or not is_on_ground(aircraft, config)
 
 
 def is_fresh(aircraft: Aircraft, config: Config) -> bool:

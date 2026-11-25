@@ -15,6 +15,7 @@ timezone = "Europe/Zurich"  # used for the clock on the display
 code = "ZRH"                # label drawn next to the runway glyph
 latitude = 47.458056
 longitude = 8.548056
+elevation_ft = 1416         # field elevation; slow reports just above it count as on the ground
 # Runway thresholds [lat1, lon1, lat2, lon2]; leave empty for a generic airport marker.
 runways = [
   [47.45890, 8.53747, 47.45660, 8.57045],  # 10/28

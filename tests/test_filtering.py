@@ -2,7 +2,7 @@ import dataclasses
 
 from zurich_air.config import AircraftConfig, Config
 from zurich_air.data.aircraft import Aircraft
-from zurich_air.processing.filtering import dedupe, visible_aircraft
+from zurich_air.processing.filtering import dedupe, is_on_ground, visible_aircraft
 
 CONFIG = Config()
 CITY = (CONFIG.location.latitude, CONFIG.location.longitude)
@@ -25,6 +25,28 @@ def test_ground_traffic_dropped_unless_wanted():
     taxiing = ac(on_ground=True)
     assert visible_aircraft([taxiing], CONFIG) == []
     assert visible_aircraft([taxiing], with_aircraft(include_ground=True)) == [taxiing]
+
+
+def test_low_and_stationary_counts_as_on_ground():
+    # A helicopter on a pad reporting "airborne" at 1350 ft and 0.7 kt (ZRH is at 1416 ft).
+    on_pad = ac("4b0001", altitude_ft=1350, ground_speed_kt=0.7, category="A7")
+    hovering_high = ac("4b0002", altitude_ft=6000, ground_speed_kt=0.0, category="A7")
+    flying_low = ac("4b0003", altitude_ft=1800, ground_speed_kt=90.0)
+    speed_unknown = ac("4b0004", altitude_ft=1350)
+    altitude_unknown = ac("4b0005", ground_speed_kt=0.5)
+    traffic = [on_pad, hovering_high, flying_low, speed_unknown, altitude_unknown]
+    assert is_on_ground(on_pad, CONFIG)
+    assert visible_aircraft(traffic, CONFIG) == traffic[1:]
+    assert visible_aircraft([on_pad], with_aircraft(include_ground=True)) == [on_pad]
+
+
+def test_ground_margin_follows_field_elevation():
+    high_field = dataclasses.replace(
+        CONFIG, airport=dataclasses.replace(CONFIG.airport, elevation_ft=5600)
+    )
+    parked = ac(altitude_ft=5800, ground_speed_kt=2.0)
+    assert is_on_ground(parked, high_field)
+    assert not is_on_ground(parked, CONFIG)
 
 
 def test_vehicles_and_obstacles_never_shown():

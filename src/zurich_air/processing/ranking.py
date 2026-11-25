@@ -20,6 +20,7 @@ from collections.abc import Iterable
 from zurich_air.config import Config
 from zurich_air.data.aircraft import Aircraft
 from zurich_air.data.reference import WIDEBODY_TYPES
+from zurich_air.processing.filtering import is_airborne_or_wanted
 from zurich_air.processing.geo import distance_km
 
 TERMINAL_ALTITUDE_FT = 10_000
@@ -46,6 +47,6 @@ def select_featured(
 ) -> list[Aircraft]:
     """The *n* most interesting aircraft (default ``aircraft.featured``), best first."""
     n = config.aircraft.featured if n is None else n
-    candidates = [a for a in aircraft if config.aircraft.include_ground or not a.on_ground]
+    candidates = [a for a in aircraft if is_airborne_or_wanted(a, config)]
     candidates.sort(key=lambda a: (-featured_score(a, config), a.icao))
     return candidates[:n]

@@ -30,6 +30,8 @@ class Aircraft:
     squawk: str | None = None
     emergency: bool = False
     military: bool = False
+    interesting: bool = False  # flagged as interesting in the provider's aircraft database
+    privacy: bool = False  # owner opted out of public tracking (LADD) or uses a privacy address
     position_age_s: float = 0.0  # seconds since the position was last updated
 
     @property

@@ -21,7 +21,11 @@ from typing import Any
 from zurich_air.data.aircraft import Aircraft, TrafficSnapshot
 
 EMERGENCY_SQUAWKS = frozenset({"7500", "7600", "7700"})  # hijack, radio failure, emergency
+# Bits of the aircraft-database flags ("dbFlags") published by adsb.fi, adsb.lol and readsb.
 DB_FLAG_MILITARY = 1
+DB_FLAG_INTERESTING = 2
+DB_FLAG_PIA = 4  # Privacy ICAO Address: a temporary address that hides the owner
+DB_FLAG_LADD = 8  # Limiting Aircraft Data Displayed: the owner opted out of public tracking
 _HEX = re.compile(r"~?[0-9a-f]{6}")
 _MS_EPOCH_THRESHOLD = 1e11  # "now" above this is in milliseconds (API), else seconds (readsb)
 
@@ -84,7 +88,9 @@ def parse_aircraft(entry: Any) -> Aircraft | None:
         squawk=squawk,
         emergency=(emergency_field is not None and emergency_field.lower() != "none")
         or squawk in EMERGENCY_SQUAWKS,
-        military=db_flags is not None and bool(db_flags & DB_FLAG_MILITARY),
+        military=_flag(db_flags, DB_FLAG_MILITARY),
+        interesting=_flag(db_flags, DB_FLAG_INTERESTING),
+        privacy=_flag(db_flags, DB_FLAG_PIA | DB_FLAG_LADD),
         position_age_s=_first(
             _non_negative(_float(entry.get("seen_pos"))),
             _non_negative(_float(entry.get("seen"))),
@@ -111,6 +117,10 @@ def _float(value: Any) -> float | None:
 def _int(value: Any) -> int | None:
     number = _float(value)
     return None if number is None else round(number)
+
+
+def _flag(flags: int | None, mask: int) -> bool:
+    return flags is not None and flags >= 0 and bool(flags & mask)
 
 
 def _non_negative(value: float | None) -> float | None:
