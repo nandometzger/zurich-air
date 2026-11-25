@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import timedelta
 from pathlib import Path
 
 from PIL import Image
@@ -10,8 +11,8 @@ from PIL import Image
 from zurich_air import __version__
 from zurich_air.config import Config, ConfigError, load_config
 from zurich_air.data import synthetic
-from zurich_air.processing.geo import distance_km
-from zurich_air.processing.ranking import select_featured
+from zurich_air.pipeline import build_scene
+from zurich_air.processing.history import TrackHistory
 from zurich_air.rendering.renderer import Renderer, Scene
 
 
@@ -69,20 +70,10 @@ def _preview(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 def preview_scene(name: str, config: Config) -> Scene:
     """A renderable scene built from the synthetic traffic *name*."""
     data = synthetic.scene(name)
-    lat, lon = config.location.latitude, config.location.longitude
-    visible = [
-        a
-        for a in data.snapshot.aircraft
-        if distance_km(lat, lon, a.lat, a.lon) <= config.radar.range_km
-        and (config.aircraft.include_ground or not a.on_ground)
-    ]
-    age_s = (data.now - data.snapshot.timestamp).total_seconds()
-    return Scene(
-        aircraft=visible,
-        featured=select_featured(visible, config),
-        updated_at=data.snapshot.timestamp,
-        trails=data.trails,
-        status="stale" if age_s > 2 * config.update.interval_s else "live",
-        now=data.now,
-        source_label="SYNTHETIC DATA",
-    )
+    history = TrackHistory()
+    step = timedelta(seconds=synthetic.TRAIL_INTERVAL_S)
+    for icao, points in data.trails.items():
+        for age, (lat, lon) in zip(range(len(points), 0, -1), points, strict=True):
+            history.add(icao, lat, lon, data.snapshot.timestamp - age * step)
+    history.update(data.snapshot)
+    return build_scene(data.snapshot, history, config, now=data.now)

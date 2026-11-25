@@ -221,7 +221,7 @@ def scene(name: str) -> SyntheticScene:
     snapshot = TrafficSnapshot(
         aircraft=tuple(aircraft),
         timestamp=timestamp,
-        source="synthetic",
+        source="synthetic data",  # shown as the attribution in the footer
         total_reported=len(aircraft),
     )
     return SyntheticScene(name=name, snapshot=snapshot, trails=trails, now=now)
