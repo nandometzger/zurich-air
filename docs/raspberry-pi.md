@@ -331,6 +331,14 @@ If the program crashes, systemd restarts it after 30 seconds, then waits longer 
 each further crash, up to 10 minutes between attempts. After a fix, start afresh with
 `sudo systemctl reset-failed zurich-air && sudo systemctl restart zurich-air`.
 
+For more detail in the log, run it by hand for a while (Ctrl-C stops it):
+
+```sh
+sudo systemctl stop zurich-air
+~/zurich-air/.venv/bin/zurich-air run --log-level debug --config ~/zurich-air/config.toml
+sudo systemctl start zurich-air
+```
+
 ### Uninstall
 
 ```sh
@@ -339,6 +347,52 @@ sudo rm /etc/systemd/system/zurich-air.service
 sudo systemctl daemon-reload
 rm -rf ~/zurich-air
 ```
+
+## Running unattended
+
+> **Untested on a Pi.** The behaviour below is covered by the test suite; the systemd
+> parts (watchdog, time sync) have not yet been seen on a Zurich Air device.
+
+**What the log says.** One line per update, as above, and once an hour a summary:
+
+```text
+last hour: 60 updates, 58 with new data, 14 display refreshes, 0 errors; failed requests: adsb.fi 2, adsb.lol 0
+```
+
+Problems are logged as warnings or errors with their journal priority, so
+`journalctl -u zurich-air -p warning` lists only those. An unexpected error is logged
+with its traceback at most once an hour, then as a single line. Zurich Air logs no
+network names, addresses or location; callsigns in the log are public flight
+identifiers, and aircraft that opted out of tracking never appear by name.
+
+**Outages.** When no new data arrives, the last picture stays up, marked with a hollow
+dot and `NO DATA SINCE 14:05` in the footer. After 30 minutes (`update.hide_after_s`)
+the radar is cleared and the list says `WAITING FOR DATA`, so aircraft long gone never
+pass for current traffic. The app keeps trying and returns to normal by itself.
+
+**Quiet hours.** From 23:30 to 06:00 (`update.quiet_hours`, local time) it updates every
+10 minutes instead of every minute (`update.quiet_interval_s`): fewer requests to the
+data services and fewer panel refreshes while there is little traffic. Set
+`quiet_hours = ""` to update all night.
+
+**Watchdog.** The service is of `Type=notify`: the app tells systemd when it has
+started, then that it is alive, after every update and at least once a minute while it
+waits for the next (also during quiet hours). If it stays silent for 5 minutes
+(`WatchdogSec=` in the unit), systemd kills and restarts it; the log then shows
+`Watchdog timeout`. Errors inside an update are logged and the next update carries on;
+only a display that fails three times in a row ends the program, so that systemd starts
+it again.
+
+**Clock.** The Pi has no battery-backed clock: after a power cut it starts with the time
+it last saved, until NTP corrects it over the network. A wrong clock breaks HTTPS and
+the time on the display, so the service waits at boot until the first time sync. The
+install script enables `systemd-time-wait-sync.service` for this; Raspberry Pi OS ships
+it with `systemd-timesyncd` but leaves it disabled, and without it `time-sync.target`
+does not wait. The catch: without a network the service does not start, and the panel
+keeps its last picture until the network is back. Check with `timedatectl` (`System
+clock synchronized: yes`) and `systemctl status systemd-time-wait-sync`. Should the
+clock still read a date before 2026, the app neither fetches nor draws, and looks again
+every 30 seconds.
 
 ## Troubleshooting
 
@@ -359,6 +413,10 @@ rm -rf ~/zurich-air
   battery-backed clock: until `timedatectl` reports `System clock synchronized: yes`,
   HTTPS requests can fail. Zurich Air keeps retrying, so this sorts itself out once the
   Wi-Fi is up.
+- **The service has not started after a reboot** (`systemctl status zurich-air` shows
+  `inactive (dead)` and `systemctl list-jobs` a waiting start job): it is waiting for
+  the first time sync, see [Clock](#running-unattended). Get the Pi online; if the
+  network is fine, `journalctl -u systemd-timesyncd -b` shows why the sync fails.
 - **`uv: command not found`:** uv lives in `~/.local/bin`; open a new login shell or call
   `~/.local/bin/uv`. If `uv sync --locked` reports an outdated lock file, update uv with
   `~/.local/bin/uv self update`; if it still fails, the lock file in the repository needs

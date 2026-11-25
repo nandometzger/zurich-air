@@ -1,4 +1,7 @@
 import json
+import logging
+import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -6,7 +9,7 @@ import pytest
 from PIL import Image
 
 from zurich_air import cli
-from zurich_air.cli import main, snapshot_scene
+from zurich_air.cli import configure_logging, main, snapshot_scene
 from zurich_air.config import Config
 from zurich_air.data.provider import ProviderError
 from zurich_air.data.readsb import parse_snapshot
@@ -161,6 +164,19 @@ def test_log_level_option(tmp_path, monkeypatch, args, level):
 def test_log_level_rejects_unknown_levels(args):
     with pytest.raises(SystemExit):
         main(args)
+
+
+def test_logs_without_time_under_journald(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli.logging, "basicConfig", lambda **kwargs: None)
+    record = logging.LogRecord("zurich_air.app", logging.WARNING, __file__, 1, "hi", None, None)
+    with (tmp_path / "stderr").open("w") as stderr:
+        monkeypatch.setattr(sys, "stderr", stderr)
+        stat = os.fstat(stderr.fileno())
+        journal = {"JOURNAL_STREAM": f"{stat.st_dev}:{stat.st_ino}"}
+        assert configure_logging("info", journal).format(record) == "<4>WARNING zurich_air.app: hi"
+        console = configure_logging("info", {}).format(record)
+    assert console.endswith(" WARNING zurich_air.app: hi")
+    assert console[:4].isdigit()  # starts with the date and time
 
 
 def test_explain_snapshot_prints_ranked_table(capsys):

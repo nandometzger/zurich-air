@@ -10,6 +10,13 @@ Documentation=https://github.com/nandometzger/zurich-air/blob/main/docs/raspberr
 # Start once the network is up. The app also rides out later outages on its own.
 Wants=network-online.target
 After=network-online.target
+# ...and once the clock is right: the Pi has no real-time clock, and a wrong time breaks
+# HTTPS and the clock on the display. With systemd-timesyncd (Raspberry Pi OS) this
+# target only waits for the first NTP sync if systemd-time-wait-sync.service is enabled,
+# which install-pi.sh does. Without network the service then waits, as it could not
+# fetch anything anyway; the app also refuses to use a clock that reads before 2026.
+Wants=time-sync.target
+After=time-sync.target
 # Crash-loop guard: at most 5 starts in 10 minutes. With the restart backoff below a
 # crash loop stays under this limit and keeps retrying every 10 minutes; the limit only
 # stops a fast loop if the backoff is unavailable (systemd older than 254).
@@ -17,8 +24,13 @@ StartLimitIntervalSec=10min
 StartLimitBurst=5
 
 [Service]
-# "exec" (not "simple") so `systemctl start` fails if the program cannot be executed.
-Type=exec
+# The app reports READY=1 once it has started, then WATCHDOG=1 after every update and at
+# least once a minute while it waits for the next one (also during the 10-minute quiet
+# hours interval). An update takes a minute at most (two 10 s source timeouts, DNS, the
+# panel), so 5 minutes of silence means the process hangs: systemd kills and restarts it.
+Type=notify
+NotifyAccess=main
+WatchdogSec=5min
 User=@USER@
 # On Raspberry Pi OS, /dev/spidev* belongs to group spi and /dev/gpiochip* to gpio.
 SupplementaryGroups=spi gpio
@@ -32,6 +44,7 @@ EnvironmentFile=-@APP_DIR@/.env
 Environment=PYTHONUNBUFFERED=1
 SyslogIdentifier=zurich-air
 
+# Also after a watchdog timeout, or when the app exits because the display keeps failing.
 Restart=always
 RestartSec=30s
 # Back off on repeated crashes: 30 s, 1 min, 2 min, 5 min, then every 10 min.

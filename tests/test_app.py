@@ -12,6 +12,7 @@ import pytest
 from zurich_air.app import (
     CLOCK_RETRY_S,
     MAX_DISPLAY_FAILURES,
+    WATCHDOG_PING_S,
     App,
     ErrorLog,
     HourlySummary,
@@ -60,6 +61,20 @@ class MemoryDisplay:
 
     def close(self):
         self.closed = True
+
+
+class FakeNotifier:
+    def __init__(self) -> None:
+        self.sent = []
+
+    def ready(self):
+        self.sent.append("READY=1")
+
+    def watchdog(self):
+        self.sent.append("WATCHDOG=1")
+
+    def stopping(self):
+        self.sent.append("STOPPING=1")
 
 
 class FakeTime:
@@ -268,30 +283,38 @@ def test_build_error_is_survived(monkeypatch):
     assert display.frames == []
 
 
-def test_run_survives_unexpected_errors():
+def test_run_survives_unexpected_errors_and_reports_readiness():
     stop = InstantStop()
+    notifier = FakeNotifier()
     display = MemoryDisplay()
-    app = App(CONFIG, stop_after(3, stop, RuntimeError("bug")), display)
+    app = App(CONFIG, stop_after(3, stop, RuntimeError("bug")), display, notifier=notifier)
     assert app.run(stop, handle_signals=False) == 0
     assert len(stop.waits) >= 2  # carried on after each failure
+    assert notifier.sent[0] == "READY=1"
+    assert notifier.sent[-1] == "STOPPING=1"
+    assert notifier.sent.count("WATCHDOG=1") >= 3  # after every tick
     assert display.closed
 
 
 def test_repeated_display_failures_exit_non_zero(caplog):
     stop = InstantStop(FakeTime(T0))
+    notifier = FakeNotifier()
     display = MemoryDisplay(*[True] * 10)
-    app = App(CONFIG, FakeProvider(*[snapshot()] * 10), display, clock=stop.clock)
+    app = App(
+        CONFIG, FakeProvider(*[snapshot()] * 10), display, notifier=notifier, clock=stop.clock
+    )
     with caplog.at_level(logging.ERROR, logger="zurich_air.app"):
         assert app.run(stop, handle_signals=False) == 1
     assert len(display.failures) == 10 - MAX_DISPLAY_FAILURES
     assert "times in a row" in caplog.text
+    assert notifier.sent[-1] == "STOPPING=1"
     assert display.closed
 
 
 def test_a_display_that_recovers_keeps_running():
     stop = InstantStop(FakeTime(T0))  # the clock moves on, so every frame is new
     display = MemoryDisplay(True, True, False, True, True, False)  # never 3 in a row
-    app = App(CONFIG, stop_after(6, stop), display, clock=stop.clock)
+    app = App(CONFIG, stop_after(6, stop), display, notifier=FakeNotifier(), clock=stop.clock)
     assert app.run(stop, handle_signals=False) == 0
     assert display.failures == []
     assert len(display.frames) == 2
@@ -307,6 +330,8 @@ def test_closing_a_broken_display_does_not_raise(caplog):
 
 
 def test_sigterm_mid_sleep_stops_quickly():
+    notifier = FakeNotifier()
+
     class Display(MemoryDisplay):
         def show(self, image):
             super().show(image)
@@ -315,7 +340,7 @@ def test_sigterm_mid_sleep_stops_quickly():
     def guard(signum, frame):  # catches the signal should the app have stopped already
         pass
 
-    app = App(CONFIG, FakeProvider(snapshot()), Display(), clock=lambda: T0)
+    app = App(CONFIG, FakeProvider(snapshot()), Display(), notifier=notifier, clock=lambda: T0)
     previous = signal.signal(signal.SIGTERM, guard)
     try:
         start = time.monotonic()
@@ -324,18 +349,22 @@ def test_sigterm_mid_sleep_stops_quickly():
         assert signal.getsignal(signal.SIGTERM) is guard  # restored
     finally:
         signal.signal(signal.SIGTERM, previous)
+    assert notifier.sent[-1] == "STOPPING=1"
     assert app.display.closed
 
 
-# Quiet hours --------------------------------------------------------------------------
+# Quiet hours and the watchdog ---------------------------------------------------------
 
 
-def test_loop_updates_less_often_during_quiet_hours():
+def test_watchdog_is_told_during_long_quiet_hour_sleeps():
     clock = FakeTime(datetime(2026, 12, 24, 2, 0, 1, tzinfo=ZRH))  # quiet hours
     stop = InstantStop(clock)
-    app = App(CONFIG, stop_after(2, stop), MemoryDisplay(), clock=clock)
+    notifier = FakeNotifier()
+    app = App(CONFIG, stop_after(2, stop), MemoryDisplay(), notifier=notifier, clock=clock)
     app.run(stop, handle_signals=False)
-    assert stop.waits == [CONFIG.update.quiet_interval_s]
+    assert sum(stop.waits) == pytest.approx(CONFIG.update.quiet_interval_s)
+    assert max(stop.waits) <= WATCHDOG_PING_S
+    assert notifier.sent.count("WATCHDOG=1") >= CONFIG.update.quiet_interval_s / WATCHDOG_PING_S
     assert clock.now.astimezone(ZRH).time().isoformat() == "02:10:01"
 
 
@@ -369,7 +398,7 @@ def test_unset_clock_skips_fetching_and_retries_soon(caplog):
     clock = FakeTime(datetime(2025, 1, 1, 0, 0, 5, tzinfo=UTC))  # Pi booted without NTP
     stop = NtpArrives(clock)
     display = MemoryDisplay()
-    app = App(CONFIG, stop_after(1, stop), display, clock=clock)
+    app = App(CONFIG, stop_after(1, stop), display, notifier=FakeNotifier(), clock=clock)
     with caplog.at_level(logging.INFO, logger="zurich_air.app"):
         app.run(stop, handle_signals=False)
     assert stop.waits == [CLOCK_RETRY_S, CLOCK_RETRY_S]

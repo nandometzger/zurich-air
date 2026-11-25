@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -25,10 +26,12 @@ from zurich_air.processing.filtering import visible_aircraft
 from zurich_air.processing.history import TrackHistory
 from zurich_air.processing.ranking import rank
 from zurich_air.rendering.renderer import Renderer, Scene
+from zurich_air.systemd import JournalFormatter, logs_to_journal
 
 log = logging.getLogger(__name__)
 LOG_LEVELS = ("debug", "info", "warning", "error")
 CONSOLE_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+JOURNAL_FORMAT = "%(levelname)s %(name)s: %(message)s"  # journald adds the time itself
 SNAPSHOT_LABEL = "SNAPSHOT"  # footer attribution of saved responses, unless told otherwise
 
 
@@ -118,9 +121,19 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def configure_logging(level: str) -> None:
-    """Log to stderr at *level*; does nothing if logging is already set up (as under pytest)."""
-    logging.basicConfig(level=level.upper(), format=CONSOLE_FORMAT)
+def configure_logging(level: str, env: Mapping[str, str] | None = None) -> logging.Formatter:
+    """Log to stderr at *level*; in the systemd journal's style when stderr goes there.
+
+    Does nothing if logging is already set up (as under pytest). Returns the formatter.
+    """
+    if logs_to_journal(sys.stderr, env):
+        formatter: logging.Formatter = JournalFormatter(JOURNAL_FORMAT)
+    else:
+        formatter = logging.Formatter(CONSOLE_FORMAT)
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    logging.basicConfig(level=level.upper(), handlers=[handler])
+    return formatter
 
 
 def _add_config_arg(parser: argparse.ArgumentParser) -> None:

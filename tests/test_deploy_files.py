@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from zurich_air.app import WATCHDOG_PING_S
+
 ROOT = Path(__file__).resolve().parents[1]
 UNIT = ROOT / "system" / "zurich-air.service"
 INSTALLER = ROOT / "scripts" / "install-pi.sh"
@@ -47,6 +49,29 @@ def unit() -> Unit:
 def test_unit_starts_after_network_is_online(unit):
     assert "network-online.target" in words(unit["Unit"]["Wants"])
     assert "network-online.target" in words(unit["Unit"]["After"])
+
+
+def test_unit_waits_for_the_clock(unit):
+    # The Pi has no real-time clock; install-pi.sh makes time-sync.target mean "synced".
+    assert "time-sync.target" in words(unit["Unit"]["Wants"])
+    assert "time-sync.target" in words(unit["Unit"]["After"])
+    assert "systemctl enable --quiet systemd-time-wait-sync" in INSTALLER.read_text()
+
+
+def seconds(timespan: str) -> float:
+    """A systemd time span such as ``5min`` or ``90s`` (single unit only)."""
+    match = re.fullmatch(r"(\d+)\s*(min|s)?", timespan)
+    assert match, f"unsupported time span: {timespan!r}"
+    return int(match[1]) * (60 if match[2] == "min" else 1)
+
+
+def test_unit_uses_the_watchdog(unit):
+    service = unit["Service"]
+    assert service["Type"] == ["notify"]  # the app sends READY=1
+    assert service["NotifyAccess"] == ["main"]
+    # The app pings at least every WATCHDOG_PING_S while sleeping and after every
+    # update, which takes about a minute at worst: leave room for both, twice over.
+    assert seconds(service["WatchdogSec"][0]) >= 2 * (WATCHDOG_PING_S + 60)
 
 
 def test_unit_restarts_without_spinning(unit):

@@ -6,7 +6,8 @@ at most hourly per kind, and the next update carries on. Only a display that kee
 failing ends the process, with a non-zero status so that systemd restarts it.
 
 Updates follow ``update.interval_s``, and ``update.quiet_interval_s`` during quiet hours.
-The log gets one line per update and a summary every hour.
+Under systemd the loop reports READY, WATCHDOG and STOPPING (see systemd.py). The log
+gets one line per update and a summary every hour.
 
 Refresh policies for the e-paper panel are Milestone 6.
 """
@@ -35,6 +36,7 @@ from zurich_air.display.base import Display
 from zurich_air.pipeline import build_scene
 from zurich_air.processing.history import TrackHistory
 from zurich_air.rendering.renderer import Renderer
+from zurich_air.systemd import Notifier
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -42,6 +44,7 @@ T = TypeVar("T")
 FETCH_MARGIN_KM = 10.0  # fetch a little beyond the radar so trails exist on entry
 MAX_DISPLAY_FAILURES = 3  # in a row; then exit non-zero so that systemd restarts us
 CLOCK_RETRY_S = 30.0  # how often to look again at a clock that is not set yet
+WATCHDOG_PING_S = 60.0  # while sleeping, tell the systemd watchdog at least this often
 TRACEBACK_EVERY_S = 3600.0  # full traceback of a recurring error at most this often
 SUMMARY_EVERY_S = 3600.0
 
@@ -149,6 +152,7 @@ class App:
         *,
         renderer: Renderer | None = None,
         history: TrackHistory | None = None,
+        notifier: Notifier | None = None,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
         self.config = config
@@ -156,6 +160,7 @@ class App:
         self.display = display
         self.renderer = renderer or Renderer(config)
         self.history = history or TrackHistory()
+        self.notifier = notifier or Notifier()  # a no-op outside systemd
         self.clock = clock
         self.snapshot: TrafficSnapshot | None = None  # last good data
         self.last_success: datetime | None = None  # local time it arrived
@@ -221,9 +226,11 @@ class App:
             quiet = f" ({update.quiet_interval_s:.0f} s in quiet hours {self._quiet})"
         log.info("running: update every %.0f s%s", update.interval_s, quiet)
         with _stop_on_signals(stop, enabled=handle_signals):
+            self.notifier.ready()
             try:
                 status = self._loop(stop)
             finally:
+                self.notifier.stopping()
                 self.close()
         log.info("stopped")
         return status
@@ -235,6 +242,7 @@ class App:
             except Exception as exc:  # tick guards each stage; this is the last resort
                 self.errors.report("update", exc)
                 report = TickReport(errors=("update",))
+            self.notifier.watchdog()
             if summary := self.summary.add(report, _source_failures(self.provider)):
                 log.info("%s", summary)
             if self.display_failures >= MAX_DISPLAY_FAILURES:
@@ -244,7 +252,7 @@ class App:
                 )
                 return 1
             delay = CLOCK_RETRY_S if report.clock_wrong else self.next_delay(self.clock())
-            stop.wait(delay)
+            self._sleep(stop, delay)
         return 0
 
     def next_delay(self, now: datetime) -> float:
@@ -328,6 +336,16 @@ class App:
         self._shown = frame
         self.display_failures = 0
         return True
+
+    def _sleep(self, stop: threading.Event, seconds: float) -> None:
+        """Wait *seconds* or until stopped, telling the watchdog at least every
+        WATCHDOG_PING_S, so that it may fire sooner than a long quiet-hours wait."""
+        while seconds > 0:
+            step = min(seconds, WATCHDOG_PING_S)
+            if stop.wait(step):
+                return
+            seconds -= step
+            self.notifier.watchdog()
 
 
 def _source_failures(provider: TrafficProvider) -> Mapping[str, int]:
