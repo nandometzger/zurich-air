@@ -46,6 +46,21 @@ uv run zurich-air preview --snapshot snapshots/now.json --scale 3
 
 `preview --snapshot` accepts several files (oldest first) to build up the radar trails.
 
+### Which aircraft are listed
+
+The flight list favours arrivals and departures near the airport, unusual aircraft
+(A380, 747, Beluga, military, Rega helicopters, …) and traffic low enough to see from the
+city; emergencies always come first. Aircraft already in the list keep their place unless
+a newcomer is clearly more interesting, so the e-paper stays calm. Aircraft whose owners
+opted out of public tracking (LADD) or that fly with a privacy address (PIA) are never
+listed; they remain anonymous markers on the radar. The weights live in the `[ranking]`
+section of the config, and `explain` shows every score and the reasons behind it:
+
+```sh
+uv run zurich-air explain                                # one live fetch
+uv run zurich-air explain --snapshot snapshots/now.json  # offline
+```
+
 ## Data sources
 
 Zurich Air shows live data from community ADS-B networks, fetched over HTTPS without an

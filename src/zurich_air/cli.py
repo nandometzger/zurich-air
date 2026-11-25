@@ -8,19 +8,22 @@ import logging
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from PIL import Image
 
 from zurich_air import __version__
-from zurich_air.app import App
+from zurich_air.app import FETCH_MARGIN_KM, App
 from zurich_air.config import Config, ConfigError, load_config
 from zurich_air.data import synthetic
 from zurich_air.data.aircraft import TrafficSnapshot
-from zurich_air.data.provider import build_provider
+from zurich_air.data.provider import ProviderError, build_provider
 from zurich_air.data.readsb import ReadsbError, parse_snapshot
 from zurich_air.display import DisplayUnavailableError, create_display
 from zurich_air.pipeline import build_scene
+from zurich_air.processing.filtering import visible_aircraft
 from zurich_air.processing.history import TrackHistory
+from zurich_air.processing.ranking import rank
 from zurich_air.rendering.renderer import Renderer, Scene
 
 log = logging.getLogger(__name__)
@@ -70,6 +73,19 @@ def main(argv: list[str] | None = None) -> int:
     run = commands.add_parser("run", help="update the display continuously until stopped")
     _add_config_arg(run)
 
+    explain = commands.add_parser(
+        "explain", help="show why aircraft are (not) featured: scores, phases and reasons"
+    )
+    _add_config_arg(explain)
+    explain.add_argument(
+        "--snapshot",
+        type=Path,
+        nargs="+",
+        metavar="FILE",
+        help="saved readsb JSON response(s), oldest first; the earlier ones only carry the "
+        "flight list forward. Without this, live traffic is fetched once",
+    )
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=args.log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -80,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
         return _live(args, parser, once=True)
     if args.command == "run":
         return _live(args, parser, once=False)
+    if args.command == "explain":
+        return _explain(args, parser)
     parser.print_help()
     return 0
 
@@ -144,6 +162,67 @@ def _preview(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             image.resize(size, Image.Resampling.NEAREST).save(scaled)
             print(scaled)
     return 0
+
+
+def _explain(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    config = _load(args, parser)
+    if args.snapshot:
+        try:
+            snapshots = read_snapshots(args.snapshot)
+        except (OSError, ValueError) as exc:
+            parser.error(f"cannot read snapshot: {exc}")
+    else:
+        centre = config.location
+        radius_km = config.radar.range_km + FETCH_MARGIN_KM
+        try:
+            fetched = build_provider(config.provider).fetch(
+                centre.latitude, centre.longitude, radius_km
+            )
+        except ProviderError as exc:
+            print(f"zurich-air: error: {exc}", file=sys.stderr)
+            return 1
+        snapshots = [fetched]
+    print(explain_ranking(snapshots, config))
+    return 0
+
+
+def explain_ranking(snapshots: list[TrafficSnapshot], config: Config) -> str:
+    """A table of every candidate in the last snapshot: rank, score and the reasons.
+
+    Earlier snapshots only carry the flight list forward, as the live app does.
+    """
+    previous: list[str] = []
+    for snapshot in snapshots[:-1]:
+        scene = build_scene(snapshot, None, config, snapshot.timestamp, None, previous)
+        previous = [a.icao for a in scene.featured]
+    snapshot = snapshots[-1]
+    aircraft = visible_aircraft(snapshot.aircraft, config)
+    candidates = rank(aircraft, config, previous)
+
+    when = snapshot.timestamp.astimezone(ZoneInfo(config.location.timezone))
+    withheld = sum(a.privacy for a in aircraft)
+    lines = [
+        f"{when:%Y-%m-%d %H:%M:%S} · {snapshot.source} · {len(aircraft)} aircraft on the "
+        f"radar, {withheld} withheld for privacy (LADD/PIA)",
+        "",
+        f"{'#':>3}  {'FLIGHT':<9} {'TYPE':<5} {'ALT':>8} {config.airport.code:>6}  "
+        f"{'PHASE':<5}  {'SCORE':>5}  REASONS",
+    ]
+    featured = config.aircraft.featured
+    for i, c in enumerate(candidates, start=1):
+        if i == featured + 1:
+            lines.append(f"{'':>3}  {'-' * 40} not featured")
+        a = c.aircraft
+        altitude = "GND" if a.on_ground else "-" if a.altitude_ft is None else f"{a.altitude_ft} ft"
+        phase = {"arrival": "ARR", "departure": "DEP"}.get(c.phase or "", "")
+        reasons = ", ".join(str(r) for r in c.reasons if round(r.points))
+        lines.append(
+            f"{i:>3}  {a.label:<9} {a.type_code or '-':<5} {altitude:>8} "
+            f"{c.airport_km:>3.0f} km  {phase:<5}  {c.score:>5.0f}  {reasons}"
+        )
+    if not candidates:
+        lines.append(f"{'':>3}  (no candidates)")
+    return "\n".join(lines)
 
 
 def preview_scene(name: str, config: Config) -> Scene:
