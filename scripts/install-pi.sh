@@ -238,21 +238,6 @@ create_config() {
   fi
 }
 
-# The service is ordered after time-sync.target, which systemd-timesyncd alone reaches
-# before the clock is synchronised. systemd-time-wait-sync (in the systemd-timesyncd
-# package, disabled by default) holds the target until the first NTP sync. Enabling it
-# takes effect at the next boot; the clock is already right while this script runs.
-enable_time_wait_sync() {
-  if ! systemctl is-active --quiet systemd-timesyncd; then
-    warn "systemd-timesyncd is not running; the service may start before the clock is set"
-  elif systemctl is-enabled --quiet systemd-time-wait-sync 2>/dev/null; then
-    log "systemd-time-wait-sync is enabled"
-  else
-    log "Enabling systemd-time-wait-sync: at boot the service waits for the first time sync"
-    sudo systemctl enable --quiet systemd-time-wait-sync
-  fi
-}
-
 install_service() {
   if [[ ! -d /run/systemd/system ]]; then
     warn "systemd is not running here; skipped installing the service"
@@ -278,7 +263,6 @@ install_service() {
     sudo systemctl daemon-reload
   fi
 
-  enable_time_wait_sync
   sudo systemctl enable --quiet "$SERVICE"
   sudo systemctl reset-failed "$SERVICE" 2>/dev/null || true
   log "Restarting $SERVICE"

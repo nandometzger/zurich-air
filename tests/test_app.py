@@ -196,6 +196,22 @@ def test_failure_without_any_data_shows_waiting_frame():
     assert len(display.frames) == 1
 
 
+@pytest.mark.parametrize("failure", [ProviderError("no data"), OSError("network down")])
+def test_start_draws_the_status_screen_before_the_first_wait(failure):
+    # Replaces whatever the panel kept from before a shutdown within the first tick.
+    stop = InstantStop(FakeTime(T0))
+    shown_after_waits = []
+
+    class Display(MemoryDisplay):
+        def show(self, image):
+            shown_after_waits.append(len(stop.waits))
+            super().show(image)
+
+    app = App(CONFIG, stop_after(1, stop, failure), Display(), clock=stop.clock)
+    app.run(stop, handle_signals=False)
+    assert shown_after_waits == [0]
+
+
 def test_history_builds_trails_across_ticks():
     app = App(
         CONFIG, FakeProvider(snapshot(), snapshot(T0 + timedelta(minutes=1), 0.2)), MemoryDisplay()

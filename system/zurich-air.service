@@ -10,13 +10,10 @@ Documentation=https://github.com/nandometzger/zurich-air/blob/main/docs/raspberr
 # Start once the network is up. The app also rides out later outages on its own.
 Wants=network-online.target
 After=network-online.target
-# ...and once the clock is right: the Pi has no real-time clock, and a wrong time breaks
-# HTTPS and the clock on the display. With systemd-timesyncd (Raspberry Pi OS) this
-# target only waits for the first NTP sync if systemd-time-wait-sync.service is enabled,
-# which install-pi.sh does. Without network the service then waits, as it could not
-# fetch anything anyway; the app also refuses to use a clock that reads before 2026.
-Wants=time-sync.target
-After=time-sync.target
+# Deliberately not ordered after time-sync.target (with systemd-time-wait-sync): while
+# the network is down at boot the service would never start, and the panel would keep
+# its last picture, live dot included. It starts at once and shows "WAITING FOR DATA";
+# the app itself neither fetches nor draws while the clock reads a date before 2026.
 # Crash-loop guard: at most 5 starts in 10 minutes. With the restart backoff below a
 # crash loop stays under this limit and keeps retrying every 10 minutes; the limit only
 # stops a fast loop if the backoff is unavailable (systemd older than 254).

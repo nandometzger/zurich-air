@@ -351,7 +351,7 @@ rm -rf ~/zurich-air
 ## Running unattended
 
 > **Untested on a Pi.** The behaviour below is covered by the test suite; the systemd
-> parts (watchdog, time sync) have not yet been seen on a Zurich Air device.
+> parts (the watchdog) have not yet been seen on a Zurich Air device.
 
 **What the log says.** One line per update, as above, and once an hour a summary:
 
@@ -384,15 +384,12 @@ only a display that fails three times in a row ends the program, so that systemd
 it again.
 
 **Clock.** The Pi has no battery-backed clock: after a power cut it starts with the time
-it last saved, until NTP corrects it over the network. A wrong clock breaks HTTPS and
-the time on the display, so the service waits at boot until the first time sync. The
-install script enables `systemd-time-wait-sync.service` for this; Raspberry Pi OS ships
-it with `systemd-timesyncd` but leaves it disabled, and without it `time-sync.target`
-does not wait. The catch: without a network the service does not start, and the panel
-keeps its last picture until the network is back. Check with `timedatectl` (`System
-clock synchronized: yes`) and `systemctl status systemd-time-wait-sync`. Should the
-clock still read a date before 2026, the app neither fetches nor draws, and looks again
-every 30 seconds.
+it last saved, until NTP corrects it over the network (`timedatectl` then shows `System
+clock synchronized: yes`). The service deliberately does not wait for that first sync:
+with the network down at boot it would never start, and the panel would keep its last
+picture, live dot included. It starts at once and shows `WAITING FOR DATA` instead;
+only while the clock reads a date before 2026 does it neither fetch nor draw, looking
+again every 30 seconds.
 
 ## Troubleshooting
 
@@ -413,10 +410,6 @@ every 30 seconds.
   battery-backed clock: until `timedatectl` reports `System clock synchronized: yes`,
   HTTPS requests can fail. Zurich Air keeps retrying, so this sorts itself out once the
   Wi-Fi is up.
-- **The service has not started after a reboot** (`systemctl status zurich-air` shows
-  `inactive (dead)` and `systemctl list-jobs` a waiting start job): it is waiting for
-  the first time sync, see [Clock](#running-unattended). Get the Pi online; if the
-  network is fine, `journalctl -u systemd-timesyncd -b` shows why the sync fails.
 - **`uv: command not found`:** uv lives in `~/.local/bin`; open a new login shell or call
   `~/.local/bin/uv`. If `uv sync --locked` reports an outdated lock file, update uv with
   `~/.local/bin/uv self update`; if it still fails, the lock file in the repository needs

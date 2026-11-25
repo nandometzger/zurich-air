@@ -51,11 +51,12 @@ def test_unit_starts_after_network_is_online(unit):
     assert "network-online.target" in words(unit["Unit"]["After"])
 
 
-def test_unit_waits_for_the_clock(unit):
-    # The Pi has no real-time clock; install-pi.sh makes time-sync.target mean "synced".
-    assert "time-sync.target" in words(unit["Unit"]["Wants"])
-    assert "time-sync.target" in words(unit["Unit"]["After"])
-    assert "systemctl enable --quiet systemd-time-wait-sync" in INSTALLER.read_text()
+def test_unit_does_not_wait_for_time_sync(unit):
+    # Waiting for the first NTP sync would keep the service from starting while the network
+    # is down, leaving a stale frame on the panel; the app checks the clock itself.
+    for key in ("Wants", "After", "Requires"):
+        assert "time-sync.target" not in words(unit["Unit"].get(key, []))
+    assert "systemd-time-wait-sync" not in INSTALLER.read_text()
 
 
 def seconds(timespan: str) -> float:
