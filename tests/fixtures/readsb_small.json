@@ -1,0 +1,21 @@
+{
+  "now": 1798123320000,
+  "total": 6,
+  "msg": "No error",
+  "ac": [
+    {"hex": "4b0001", "type": "adsb_icao", "flight": "SWR001  ", "r": "HB-AAA", "t": "BCS3",
+     "alt_baro": 4200, "gs": 180.5, "track": 137.0, "baro_rate": -800, "category": "A3",
+     "squawk": "1000", "emergency": "none", "lat": 47.52, "lon": 8.47, "seen_pos": 0.4, "seen": 0.1},
+    {"hex": "4b0002", "flight": "EZS002  ", "t": "A20N", "alt_baro": 36000, "gs": 450,
+     "track": 90, "lat": 47.20, "lon": 8.20, "seen_pos": 1.2},
+    {"hex": "4b0003", "flight": "SWR003  ", "t": "A20N", "alt_baro": "ground", "gs": 12,
+     "lat": 47.457, "lon": 8.555, "seen_pos": 0.5},
+    {"hex": "~2b0004", "type": "tisb_other", "alt_baro": 2500, "lat": 47.40, "lon": 8.60,
+     "seen_pos": 3},
+    {"hex": "4b0005", "flight": "        ", "r": "HB-ZZZ", "t": "EC45", "alt_baro": 2000,
+     "true_heading": 210.0, "geom_rate": 128, "category": "A7", "lat": 47.33, "lon": 8.55,
+     "seen_pos": 2},
+    {"hex": "4b0006", "flight": "TEST006 ", "alt_baro": 9000, "lat": 50.0, "lon": 8.5,
+     "seen_pos": 0.1}
+  ]
+}

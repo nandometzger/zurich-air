@@ -61,3 +61,35 @@ def test_invalid_configs_rejected(tmp_path, toml):
 def test_missing_file_rejected(tmp_path):
     with pytest.raises(ConfigError):
         load_config(tmp_path / "nope.toml")
+
+
+def test_provider_sources(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[provider]\nsources = ["adsb_lol"]\n')
+    assert load_config(path).provider.sources == ("adsb_lol",)
+    assert Config().provider.sources == ("adsb_fi", "adsb_lol")
+
+
+def test_display_staleness_is_separate_from_position_age():
+    cfg = Config()
+    assert cfg.update.stale_after_s == 300.0
+    assert cfg.aircraft.stale_after_s == 60.0
+
+
+@pytest.mark.parametrize(
+    "toml",
+    [
+        '[provider]\nsources = ["flightradar"]\n',
+        "[provider]\nsources = []\n",
+        '[provider]\nsources = ["adsb_fi", "adsb_fi"]\n',
+        '[provider]\nsources = "adsb_fi"\n',
+        '[provider]\nname = "adsb_lol"\n',  # replaced by sources
+        "[provider]\ntimeout_s = 0\n",
+        "[update]\nstale_after_s = -1\n",
+    ],
+)
+def test_invalid_provider_and_update_configs_rejected(tmp_path, toml):
+    path = tmp_path / "config.toml"
+    path.write_text(toml)
+    with pytest.raises(ConfigError):
+        load_config(path)

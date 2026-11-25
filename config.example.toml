@@ -37,14 +37,18 @@ altitude_units = "aviation" # "aviation" (FL350 / 4500 ft) or "metric" (10 700 m
 
 [update]
 interval_s = 60             # seconds between data fetches / display refreshes
+stale_after_s = 300         # show "NO DATA SINCE …" once the last good fetch is this old
 
 [aircraft]
 featured = 5                # aircraft shown in the flight list (0–6)
 max_altitude_ft = 60000
 include_ground = false      # show taxiing / parked aircraft
-stale_after_s = 60          # drop positions older than this
+stale_after_s = 60          # drop aircraft whose last position is older than this
 
 [provider]
-name = "adsb_lol"
-base_url = "https://api.adsb.lol"
-timeout_s = 10
+# Tried in order; a source that fails or is rate limited is skipped until it recovers.
+# "adsb_fi" (opendata.adsb.fi) and "adsb_lol" (api.adsb.lol) — see "Data sources" in the
+# README for their terms. An optional adsb.lol API key is read from the environment
+# variable ZURICH_AIR_ADSB_LOL_KEY, never from this file.
+sources = ["adsb_fi", "adsb_lol"]
+timeout_s = 10              # per request

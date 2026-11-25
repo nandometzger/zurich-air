@@ -22,6 +22,10 @@ ZRH_RUNWAYS: tuple[tuple[float, float, float, float], ...] = (
 )
 
 
+# Traffic data sources that ``provider.sources`` may name (see data/provider.py).
+SOURCE_NAMES: tuple[str, ...] = ("adsb_fi", "adsb_lol")
+
+
 class ConfigError(ValueError):
     """Raised for invalid configuration files."""
 
@@ -62,6 +66,7 @@ class DisplayConfig:
 @dataclass(frozen=True)
 class UpdateConfig:
     interval_s: float = 60.0
+    stale_after_s: float = 300.0  # show "no data" once the last good fetch is this old
 
 
 @dataclass(frozen=True)
@@ -69,13 +74,12 @@ class AircraftConfig:
     featured: int = 5
     max_altitude_ft: int = 60_000
     include_ground: bool = False
-    stale_after_s: float = 60.0
+    stale_after_s: float = 60.0  # drop aircraft whose last position is older than this
 
 
 @dataclass(frozen=True)
 class ProviderConfig:
-    name: str = "adsb_lol"
-    base_url: str = "https://api.adsb.lol"
+    sources: tuple[str, ...] = SOURCE_NAMES  # tried in this order
     timeout_s: float = 10.0
 
 
@@ -156,6 +160,21 @@ def _validate(cfg: Config) -> None:
         raise ConfigError("aircraft.featured must be between 0 and 6")
     if cfg.update.interval_s < 10:
         raise ConfigError("update.interval_s must be at least 10 seconds")
+    if cfg.update.stale_after_s <= 0 or cfg.aircraft.stale_after_s <= 0:
+        raise ConfigError("update.stale_after_s and aircraft.stale_after_s must be positive")
+    sources = cfg.provider.sources
+    if not sources:
+        raise ConfigError("provider.sources must name at least one source")
+    unknown = [s for s in sources if s not in SOURCE_NAMES]
+    if unknown:
+        raise ConfigError(
+            f"unknown provider source(s): {', '.join(unknown)}; "
+            f"choose from {', '.join(SOURCE_NAMES)}"
+        )
+    if len(set(sources)) != len(sources):
+        raise ConfigError("provider.sources must not repeat a source")
+    if cfg.provider.timeout_s <= 0:
+        raise ConfigError("provider.timeout_s must be positive")
     for runway in cfg.airport.runways:
         if len(runway) != 4:
             raise ConfigError("airport.runways entries must be [lat1, lon1, lat2, lon2]")
