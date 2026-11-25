@@ -12,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 UNIT = ROOT / "system" / "zurich-air.service"
 INSTALLER = ROOT / "scripts" / "install-pi.sh"
+GUIDE = ROOT / "docs" / "raspberry-pi.md"
 PLACEHOLDERS = {"@USER@", "@APP_DIR@"}
 
 Unit = dict[str, dict[str, list[str]]]
@@ -136,7 +137,7 @@ FORBIDDEN = {
     "GitHub token": r"\b(?:ghp|gho|ghs|github_pat)_\w{20,}",
     "adsb.lol API key value": r"ZURICH_AIR_ADSB_LOL_KEY=\w",
 }
-DEPLOY_FILES = [UNIT, *sorted((ROOT / "scripts").glob("*.sh"))]
+DEPLOY_FILES = [GUIDE, UNIT, *sorted((ROOT / "scripts").glob("*.sh"))]
 
 
 @pytest.mark.parametrize("path", DEPLOY_FILES, ids=lambda p: str(p.relative_to(ROOT)))
