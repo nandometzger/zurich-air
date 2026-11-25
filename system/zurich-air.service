@@ -1,0 +1,61 @@
+# Zurich Air: systemd service template.
+#
+# scripts/install-pi.sh replaces @USER@ and @APP_DIR@ and installs the result as
+# /etc/systemd/system/zurich-air.service. Change this template and re-run the installer
+# rather than editing the installed copy; for local tweaks use `sudo systemctl edit zurich-air`.
+
+[Unit]
+Description=Zurich Air e-paper flight display
+Documentation=https://github.com/nandometzger/zurich-air/blob/main/docs/raspberry-pi.md
+# Start once the network is up. The app also rides out later outages on its own.
+Wants=network-online.target
+After=network-online.target
+# Crash-loop guard: at most 5 starts in 10 minutes. With the restart backoff below a
+# crash loop stays under this limit and keeps retrying every 10 minutes; the limit only
+# stops a fast loop if the backoff is unavailable (systemd older than 254).
+StartLimitIntervalSec=10min
+StartLimitBurst=5
+
+[Service]
+# "exec" (not "simple") so `systemctl start` fails if the program cannot be executed.
+Type=exec
+User=@USER@
+# On Raspberry Pi OS, /dev/spidev* belongs to group spi and /dev/gpiochip* to gpio.
+SupplementaryGroups=spi gpio
+# Must stay writable: config paths such as display.output_dir are relative to it, and
+# lgpio (gpiozero's default pin library) writes .lgd-nfy* notification files here.
+WorkingDirectory=@APP_DIR@
+ExecStart=@APP_DIR@/.venv/bin/zurich-air run --config @APP_DIR@/config.toml
+# Optional secrets such as ZURICH_AIR_ADSB_LOL_KEY (git-ignored; keep it chmod 600).
+EnvironmentFile=-@APP_DIR@/.env
+# Log lines reach the journal immediately: journalctl -u zurich-air
+Environment=PYTHONUNBUFFERED=1
+SyslogIdentifier=zurich-air
+
+Restart=always
+RestartSec=30s
+# Back off on repeated crashes: 30 s, 1 min, 2 min, 5 min, then every 10 min.
+RestartSteps=4
+RestartMaxDelaySec=10min
+
+# Light hardening that leaves SPI and GPIO reachable.
+NoNewPrivileges=yes
+# /usr, /boot and /etc read-only; the home directory (and so @APP_DIR@) stays writable.
+ProtectSystem=full
+PrivateTmp=yes
+ProtectControlGroups=yes
+# The SPI driver is loaded at boot (dtparam=spi=on), never by the app.
+ProtectKernelModules=yes
+# Makes /sys read-only: loosen this if a display driver ever needs the legacy
+# /sys/class/gpio interface (spidev, lgpio and gpiozero use /dev and do not).
+ProtectKernelTunables=yes
+RestrictSUIDSGID=yes
+# Deliberately absent:
+#   PrivateDevices=, DevicePolicy=, DeviceAllow= and ProtectClock= (which implies
+#   DeviceAllow=char-rtc and with it a device allow-list) would hide /dev/spidev* and
+#   /dev/gpiochip* from the service.
+#   ProtectHome= would make the application directory itself unreadable or read-only.
+#   ProtectSystem=strict would need ReadWritePaths= for the working directory.
+
+[Install]
+WantedBy=multi-user.target
