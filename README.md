@@ -9,6 +9,13 @@ Raspberry Pi Zero 2 W and a 4.2″ Waveshare e-paper panel.
 
 <sub>Rendered from synthetic data (400 × 300 px, 1-bit, shown at 2×).</sub>
 
+The radar shows 60 km around the city, north up, with range rings every 20 km and the
+runway layout of Zürich Airport. The most interesting aircraft are numbered: each badge
+is tied to its aircraft by a short leader line, as on an air traffic controller's screen,
+and the list beside the radar names them: callsign, altitude with a climb or descent mark,
+operator and type, and `ARR` or `DEP` for arrivals and departures (otherwise an arrow
+along the track). Dotted trails fade out behind each aircraft.
+
 > **Status:** early development. Live data, the renderer and the mock display (PNG files)
 > run on any machine; hardware integration follows once the panel arrives.
 
@@ -45,6 +52,7 @@ uv run zurich-air preview --snapshot snapshots/now.json --scale 3
 ```
 
 `preview --snapshot` accepts several files (oldest first) to build up the radar trails.
+The footer credits `SNAPSHOT` unless you name the source, e.g. `--source-label ADSB.FI`.
 
 ### Which aircraft are listed
 
