@@ -1,3 +1,4 @@
+import dataclasses
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -7,6 +8,7 @@ from zurich_air.app import App, seconds_until_next_tick
 from zurich_air.config import Config
 from zurich_air.data.aircraft import Aircraft, TrafficSnapshot
 from zurich_air.data.provider import ProviderError
+from zurich_air.processing.geo import destination
 
 CONFIG = Config()
 T0 = datetime(2026, 12, 24, 14, 42, 1, tzinfo=UTC)
@@ -150,3 +152,30 @@ def test_run_survives_unexpected_errors():
 )
 def test_ticks_align_to_interval(now, delay):
     assert seconds_until_next_tick(now, 60.0) == pytest.approx(delay)
+
+
+def test_featured_list_is_carried_between_ticks():
+    config = dataclasses.replace(CONFIG, aircraft=dataclasses.replace(CONFIG.aircraft, featured=1))
+    airport = (config.airport.latitude, config.airport.longitude)
+
+    def arrival(icao, dist_km):
+        lat, lon = destination(*airport, 317, dist_km)
+        return Aircraft(
+            icao=icao, lat=lat, lon=lon, callsign="SWR1", altitude_ft=1500 + dist_km * 320,
+            track_deg=137, vertical_rate_fpm=-800,
+        )  # fmt: skip
+
+    first = TrafficSnapshot(aircraft=(arrival("a", 20),), timestamp=T0, source="adsb.fi")
+    later = T0 + timedelta(minutes=1)
+    second = TrafficSnapshot(  # "b" is a little more interesting, but not clearly
+        aircraft=(arrival("a", 20), arrival("b", 15)), timestamp=later, source="adsb.fi"
+    )
+    app = App(config, FakeProvider(first, second), MemoryDisplay())
+    app.tick(T0)
+    assert app.featured == ("a",)
+    app.tick(later)
+    assert app.featured == ("a",)
+
+    fresh = App(config, FakeProvider(second), MemoryDisplay())
+    fresh.tick(later)
+    assert fresh.featured == ("b",)

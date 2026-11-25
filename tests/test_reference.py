@@ -4,8 +4,10 @@ from zurich_air.data.aircraft import Aircraft
 from zurich_air.data.reference import (
     AIRCRAFT_TYPES,
     HELICOPTER_TYPES,
+    NOTABLE_TYPES,
     WIDEBODY_TYPES,
     is_helicopter,
+    is_rescue,
     operator_name,
     type_name,
 )
@@ -40,7 +42,16 @@ def test_type_name_known_unknown_and_missing():
 def test_type_sets_are_described():
     assert WIDEBODY_TYPES.issubset(AIRCRAFT_TYPES)
     assert HELICOPTER_TYPES.issubset(AIRCRAFT_TYPES)
+    assert NOTABLE_TYPES.issubset(AIRCRAFT_TYPES)
     assert WIDEBODY_TYPES.isdisjoint(HELICOPTER_TYPES)
+
+
+def test_is_rescue():
+    assert is_rescue(Aircraft("4b0001", 47.0, 8.0, callsign="SAZ12"))
+    assert is_rescue(Aircraft("4b0001", 47.0, 8.0, callsign="saz7"))
+    assert not is_rescue(Aircraft("4b0001", 47.0, 8.0, callsign="SAZ"))
+    assert not is_rescue(Aircraft("4b0001", 47.0, 8.0, callsign="SWR12"))
+    assert not is_rescue(Aircraft("4b0001", 47.0, 8.0))
 
 
 def test_is_helicopter():

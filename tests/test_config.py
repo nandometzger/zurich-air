@@ -93,3 +93,38 @@ def test_invalid_provider_and_update_configs_rejected(tmp_path, toml):
     path.write_text(toml)
     with pytest.raises(ConfigError):
         load_config(path)
+
+
+def test_ranking_defaults_and_partial_override(tmp_path):
+    assert Config().ranking.weights.featured_before > 0
+    assert Config().ranking.max_track_offset_deg <= 90
+    path = tmp_path / "config.toml"
+    path.write_text("[ranking]\nmax_track_offset_deg = 60\n\n[ranking.weights]\nhelicopter = 50\n")
+    ranking = load_config(path).ranking
+    assert ranking.max_track_offset_deg == 60.0
+    assert ranking.weights.helicopter == 50.0
+    assert isinstance(ranking.weights.helicopter, float)
+    assert ranking.weights.arrival == Config().ranking.weights.arrival  # untouched default
+    assert ranking.phase_radius_km == Config().ranking.phase_radius_km
+
+
+@pytest.mark.parametrize(
+    "toml",
+    [
+        "[ranking]\nphase_radius_km = 0\n",
+        "[ranking]\nmax_track_offset_deg = 120\n",
+        "[ranking]\nmin_vertical_rate_fpm = 0\n",
+        "[ranking]\narrival_max_altitude_ft = -1\n",
+        "[ranking]\nweights = 5\n",
+        "[ranking.weights]\nhelicopter = 500\n",
+        "[ranking.weights]\nno_identity = -101\n",
+        "[ranking.weights]\nfeatured_before = -5\n",
+        "[ranking.weights]\nhelicoptr = 5\n",  # typo
+        '[ranking.weights]\narrival = "high"\n',
+    ],
+)
+def test_invalid_ranking_configs_rejected(tmp_path, toml):
+    path = tmp_path / "config.toml"
+    path.write_text(toml)
+    with pytest.raises(ConfigError):
+        load_config(path)

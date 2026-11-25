@@ -47,6 +47,7 @@ class App:
         self.history = history or TrackHistory()
         self.snapshot: TrafficSnapshot | None = None  # last good data
         self.last_success: datetime | None = None  # local time it arrived
+        self.featured: tuple[str, ...] = ()  # ICAO addresses in the flight list, in order
         self._shown: bytes | None = None
 
     def tick(self, now: datetime | None = None) -> bool:
@@ -75,7 +76,10 @@ class App:
             self.history.update(snapshot)
             fresh = True
 
-        scene = build_scene(self.snapshot, self.history, self.config, now, self.last_success)
+        scene = build_scene(
+            self.snapshot, self.history, self.config, now, self.last_success, self.featured
+        )
+        self.featured = tuple(a.icao for a in scene.featured)
         image = self.renderer.render(scene)
         frame = image.tobytes()
         if frame != self._shown:

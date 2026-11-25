@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from zurich_air.config import Config
 from zurich_air.data.aircraft import Aircraft, TrafficSnapshot
 from zurich_air.pipeline import build_scene
+from zurich_air.processing.geo import destination
 from zurich_air.processing.history import TrackHistory
 
 CONFIG = Config()
@@ -77,3 +78,36 @@ def test_trails_from_history_only_for_visible_aircraft():
 
     no_trails = dataclasses.replace(CONFIG, radar=dataclasses.replace(CONFIG.radar, trails=False))
     assert build_scene(now, history, no_trails, now=T0).trails == {}
+
+
+AIRPORT = (CONFIG.airport.latitude, CONFIG.airport.longitude)
+
+
+def arrival(icao, dist_km, **kwargs):
+    lat, lon = destination(*AIRPORT, 317, dist_km)
+    return Aircraft(
+        icao=icao, lat=lat, lon=lon, callsign="SWR1", altitude_ft=1500 + round(dist_km * 320),
+        track_deg=137, vertical_rate_fpm=-800, **kwargs,
+    )  # fmt: skip
+
+
+def test_scene_exposes_flight_phases_of_featured_aircraft():
+    overflight = Aircraft(icao="4b0002", lat=LAT, lon=LON + 0.1, altitude_ft=36000)
+    scene = build_scene(snapshot(T0, arrival("4b0001", 10), overflight), None, CONFIG, now=T0)
+    assert [a.icao for a in scene.featured] == ["4b0001", "4b0002"]
+    assert scene.phases == {"4b0001": "arrival"}
+
+
+def test_previous_featured_keeps_the_list_calm():
+    one = dataclasses.replace(CONFIG, aircraft=dataclasses.replace(CONFIG.aircraft, featured=1))
+    data = snapshot(T0, arrival("4b0001", 20), arrival("4b0002", 15))
+    assert [a.icao for a in build_scene(data, None, one, now=T0).featured] == ["4b0002"]
+    calm = build_scene(data, None, one, now=T0, previous_featured=("4b0001",))
+    assert [a.icao for a in calm.featured] == ["4b0001"]
+
+
+def test_privacy_aircraft_plotted_but_never_featured():
+    private = arrival("4b0001", 5, privacy=True)
+    scene = build_scene(snapshot(T0, private, arrival("4b0002", 30)), None, CONFIG, now=T0)
+    assert [a.icao for a in scene.aircraft] == ["4b0001", "4b0002"]
+    assert [a.icao for a in scene.featured] == ["4b0002"]

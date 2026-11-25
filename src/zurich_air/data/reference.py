@@ -92,6 +92,8 @@ AIRCRAFT_TYPES: dict[str, str] = {
     "A359": "A350-900",
     "A35K": "A350-1000",
     "A388": "A380",
+    "A3ST": "Beluga",
+    "A337": "BelugaXL",
     "A400": "A400M",
     "BCS1": "A220-100",
     "BCS3": "A220-300",
@@ -113,6 +115,11 @@ AIRCRAFT_TYPES: dict[str, str] = {
     "B789": "787-9",
     "B78X": "787-10",
     "MD11": "MD-11",
+    "BLCF": "Dreamlifter",
+    "C17": "C-17",
+    # Other
+    "A124": "An-124",
+    "IL76": "Il-76",
     # Regional
     "AT72": "ATR 72",
     "AT75": "ATR 72-500",
@@ -183,6 +190,27 @@ WIDEBODY_TYPES: frozenset[str] = frozenset(
     }
 )
 
+# Very large or rare types, worth a look even at cruise altitude. Kept apart from
+# WIDEBODY_TYPES: the ranking gives these the bigger bonus and the widebody one to the rest.
+NOTABLE_TYPES: frozenset[str] = frozenset(
+    {
+        "A124",  # Antonov An-124
+        "A337",  # Airbus BelugaXL
+        "A388",  # Airbus A380
+        "A3ST",  # Airbus Beluga
+        "A400",  # Airbus A400M
+        "B744",  # Boeing 747-400
+        "B748",  # Boeing 747-8
+        "BLCF",  # Boeing 747 Dreamlifter
+        "C17",  # Boeing C-17 Globemaster III
+        "IL76",  # Ilyushin Il-76
+        "MD11",
+    }
+)
+
+# Callsign prefixes of air rescue operators.
+RESCUE_CALLSIGN_PREFIXES: frozenset[str] = frozenset({"SAZ"})  # Rega, Swiss Air-Rescue
+
 HELICOPTER_TYPES: frozenset[str] = frozenset(
     {"A109", "A139", "A169", "AS50", "EC30", "EC35", "EC45", "R22", "R44"}
 )
@@ -203,6 +231,12 @@ def type_name(type_code: str | None) -> str | None:
     if not type_code:
         return None
     return AIRCRAFT_TYPES.get(type_code.upper(), type_code.upper())
+
+
+def is_rescue(aircraft: Aircraft) -> bool:
+    """True for air rescue flights, by callsign prefix (Rega flies as SAZ…)."""
+    callsign = (aircraft.callsign or "").upper()
+    return callsign[:3] in RESCUE_CALLSIGN_PREFIXES and len(callsign) > 3
 
 
 def is_helicopter(aircraft: Aircraft) -> bool:

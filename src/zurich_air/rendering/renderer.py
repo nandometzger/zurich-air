@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw
 
 from zurich_air.config import Config
 from zurich_air.data.aircraft import Aircraft
+from zurich_air.processing.phase import Phase
 from zurich_air.rendering import formatting
 from zurich_air.rendering.flight_list import draw_flight_list
 from zurich_air.rendering.fonts import cap_height, draw_text, font
@@ -30,6 +31,7 @@ class Scene:
     status: Literal["live", "stale"] = "live"
     now: datetime | None = None  # clock in the header; defaults to updated_at
     source_label: str | None = None  # small data attribution in the footer, e.g. "ADSB.FI"
+    phases: Mapping[str, Phase] = field(default_factory=dict)  # featured ICAO -> phase, if known
 
 
 class Renderer:

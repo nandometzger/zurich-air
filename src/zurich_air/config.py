@@ -79,6 +79,34 @@ class AircraftConfig:
 
 
 @dataclass(frozen=True)
+class RankingWeights:
+    """Points each ranking component adds to an aircraft's score (see processing/ranking.py)."""
+
+    arrival: float = 40.0  # full at the airport, half at ranking.phase_radius_km
+    departure: float = 40.0
+    notable_type: float = 30.0  # very large or rare: A380, 747, An-124, Beluga, C-17, …
+    widebody: float = 10.0
+    helicopter: float = 15.0
+    rescue: float = 15.0  # air rescue callsign (Rega, SAZ…)
+    military: float = 25.0
+    interesting: float = 15.0  # flagged as interesting in the aircraft database
+    low_altitude: float = 20.0  # full on the ground, nothing from 40 000 ft
+    near_centre: float = 10.0  # full at the radar centre, nothing at its edge
+    no_identity: float = -20.0  # neither callsign nor type: an uninformative row
+    featured_before: float = 15.0  # stickiness: a newcomer must beat this margin
+
+
+@dataclass(frozen=True)
+class RankingConfig:
+    phase_radius_km: float = 40.0  # arrivals and departures are recognised this close
+    arrival_max_altitude_ft: int = 10_000
+    departure_max_altitude_ft: int = 15_000
+    min_vertical_rate_fpm: int = 300  # slower climbs and descents count as level flight
+    max_track_offset_deg: float = 75.0  # track vs. the direct line to / from the airport
+    weights: RankingWeights = field(default_factory=RankingWeights)
+
+
+@dataclass(frozen=True)
 class ProviderConfig:
     sources: tuple[str, ...] = SOURCE_NAMES  # tried in this order
     timeout_s: float = 10.0
@@ -92,6 +120,7 @@ class Config:
     display: DisplayConfig = field(default_factory=DisplayConfig)
     update: UpdateConfig = field(default_factory=UpdateConfig)
     aircraft: AircraftConfig = field(default_factory=AircraftConfig)
+    ranking: RankingConfig = field(default_factory=RankingConfig)
     provider: ProviderConfig = field(default_factory=ProviderConfig)
 
     def __post_init__(self) -> None:
@@ -179,3 +208,23 @@ def _validate(cfg: Config) -> None:
     for runway in cfg.airport.runways:
         if len(runway) != 4:
             raise ConfigError("airport.runways entries must be [lat1, lon1, lat2, lon2]")
+    _validate_ranking(cfg.ranking)
+
+
+MAX_WEIGHT = 100.0  # keeps every weight well below the emergency bonus (ranking.py)
+
+
+def _validate_ranking(ranking: RankingConfig) -> None:
+    if ranking.phase_radius_km <= 0:
+        raise ConfigError("ranking.phase_radius_km must be positive")
+    if ranking.arrival_max_altitude_ft <= 0 or ranking.departure_max_altitude_ft <= 0:
+        raise ConfigError("ranking.*_max_altitude_ft must be positive")
+    if ranking.min_vertical_rate_fpm <= 0:
+        raise ConfigError("ranking.min_vertical_rate_fpm must be positive")
+    if not 0 < ranking.max_track_offset_deg <= 90:
+        raise ConfigError("ranking.max_track_offset_deg must be between 0 and 90")
+    for f in dataclasses.fields(ranking.weights):
+        if not -MAX_WEIGHT <= getattr(ranking.weights, f.name) <= MAX_WEIGHT:
+            raise ConfigError(f"ranking.weights.{f.name} must be between -100 and 100")
+    if ranking.weights.featured_before < 0:
+        raise ConfigError("ranking.weights.featured_before must not be negative")

@@ -15,6 +15,7 @@ from zurich_air import __version__
 from zurich_air.app import App
 from zurich_air.config import Config, ConfigError, load_config
 from zurich_air.data import synthetic
+from zurich_air.data.aircraft import TrafficSnapshot
 from zurich_air.data.provider import build_provider
 from zurich_air.data.readsb import ReadsbError, parse_snapshot
 from zurich_air.display import DisplayUnavailableError, create_display
@@ -160,14 +161,23 @@ def preview_scene(name: str, config: Config) -> Scene:
 def snapshot_scene(paths: list[Path], config: Config) -> Scene:
     """A scene from saved readsb responses, rendered as if live when the last was taken."""
     history = TrackHistory()
-    snapshot = None
+    scene = None
+    for snapshot in read_snapshots(paths):
+        history.update(snapshot)
+        previous = [a.icao for a in scene.featured] if scene else ()
+        scene = build_scene(snapshot, history, config, snapshot.timestamp, None, previous)
+    assert scene is not None
+    return scene
+
+
+def read_snapshots(paths: list[Path]) -> list[TrafficSnapshot]:
+    """Saved readsb responses, each timed by its file's modification time as a fallback."""
+    snapshots = []
     for path in paths:
         fetched_at = datetime.fromtimestamp(path.stat().st_mtime, UTC)
         try:
             payload = json.loads(path.read_bytes())
-            snapshot = parse_snapshot(payload, source="snapshot", fetched_at=fetched_at)
+            snapshots.append(parse_snapshot(payload, source="snapshot", fetched_at=fetched_at))
         except ValueError as exc:  # also JSON and Unicode decoding errors
             raise ReadsbError(f"{path}: {exc}") from exc
-        history.update(snapshot)
-    assert snapshot is not None
-    return build_scene(snapshot, history, config, now=snapshot.timestamp)
+    return snapshots

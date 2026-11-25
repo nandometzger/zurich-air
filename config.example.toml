@@ -46,6 +46,30 @@ max_altitude_ft = 60000
 include_ground = false      # show taxiing / parked aircraft
 stale_after_s = 60          # drop aircraft whose last position is older than this
 
+[ranking]
+# Which aircraft get a row in the flight list. Run `zurich-air explain` to see the scores.
+# Arrivals and departures are inferred from altitude, vertical rate and track.
+phase_radius_km = 40              # recognise arrivals and departures this close to the airport
+arrival_max_altitude_ft = 10000   # arrivals: descending (or very low) below this
+departure_max_altitude_ft = 15000 # departures: climbing below this
+min_vertical_rate_fpm = 300       # slower climbs and descents count as level flight
+max_track_offset_deg = 75         # how far the track may stray from the line to / from the airport
+
+[ranking.weights]
+# Points added to the score; emergencies always come first, LADD/PIA aircraft never appear.
+arrival = 40                # full at the airport, half at phase_radius_km
+departure = 40
+notable_type = 30           # very large or rare: A380, 747, An-124, Beluga, C-17, A400M, MD-11
+widebody = 10               # other widebodies
+helicopter = 15
+rescue = 15                 # air rescue callsigns (Rega, SAZ…)
+military = 25
+interesting = 15            # flagged as interesting in the aircraft database
+low_altitude = 20           # full on the ground, nothing from 40 000 ft
+near_centre = 10            # full at the radar centre, nothing at its edge
+no_identity = -20           # neither callsign nor type: an uninformative row
+featured_before = 15        # stickiness: a newcomer must beat an aircraft in the list by this
+
 [provider]
 # Tried in order; a source that fails or is rate limited is skipped until it recovers.
 # "adsb_fi" (opendata.adsb.fi) and "adsb_lol" (api.adsb.lol) — see "Data sources" in the

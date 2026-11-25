@@ -6,13 +6,14 @@ command: filter → rank → trails → live/stale status → attribution.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from zurich_air.config import Config
 from zurich_air.data.aircraft import TrafficSnapshot
 from zurich_air.processing.filtering import visible_aircraft
 from zurich_air.processing.history import TrackHistory
-from zurich_air.processing.ranking import select_featured
+from zurich_air.processing.ranking import rank
 from zurich_air.rendering.renderer import Scene
 
 
@@ -22,6 +23,7 @@ def build_scene(
     config: Config,
     now: datetime,
     last_success: datetime | None = None,
+    previous_featured: Sequence[str] = (),
 ) -> Scene:
     """The frame to show at *now* (timezone-aware).
 
@@ -29,16 +31,20 @@ def build_scene(
     *last_success* is the local time it was fetched; staleness is measured from it so
     that a provider clock that runs fast or slow cannot flip the status. Without it,
     the snapshot's own timestamp is used (saved and synthetic data).
+    *previous_featured* lists the ICAO addresses of the last frame's flight list, in
+    order, so the list stays calm (see processing/ranking.py).
     """
     if snapshot is None:
         return Scene(aircraft=[], featured=[], updated_at=now, status="stale", now=now)
 
     aircraft = visible_aircraft(snapshot.aircraft, config)
+    featured = rank(aircraft, config, previous_featured)[: config.aircraft.featured]
     trails = history.trails(aircraft) if history is not None and config.radar.trails else {}
     age_s = (now - (last_success or snapshot.timestamp)).total_seconds()
     return Scene(
         aircraft=aircraft,
-        featured=select_featured(aircraft, config),
+        featured=[c.aircraft for c in featured],
+        phases={c.aircraft.icao: c.phase for c in featured if c.phase is not None},
         updated_at=snapshot.timestamp,
         trails=trails,
         status="stale" if age_s > config.update.stale_after_s else "live",
