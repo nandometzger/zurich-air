@@ -265,3 +265,20 @@ def test_all_sources_failing_raises():
 def test_empty_chain_rejected():
     with pytest.raises(ValueError):
         FallbackProvider([])
+
+
+def test_failed_requests_are_counted_per_source():
+    clock = Clock()
+    provider, _, _ = chain(
+        clock,
+        [http_error(500), TimeoutError()],
+        [FakeResponse(BODY), http_error(429, {"Retry-After": "60"})],
+    )
+    assert provider.failure_counts() == {"primary": 0, "fallback": 0}
+    provider.fetch(47.4, 8.5, 90)
+    with pytest.raises(ProviderError):
+        provider.fetch(47.4, 8.5, 90)  # both skipped: not counted as failures
+    clock.t += 200  # both may be asked again
+    with pytest.raises(ProviderError):
+        provider.fetch(47.4, 8.5, 90)
+    assert provider.failure_counts() == {"primary": 2, "fallback": 1}

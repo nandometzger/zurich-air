@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from zurich_air.schedule import QuietHours
+
 # Zürich Airport (LSZH) runway thresholds as (lat1, lon1, lat2, lon2).
 # Source: OurAirports (public domain), https://ourairports.com/
 ZRH_RUNWAYS: tuple[tuple[float, float, float, float], ...] = (
@@ -69,6 +71,12 @@ class UpdateConfig:
     interval_s: float = 60.0
     stale_after_s: float = 300.0  # show "no data" once the last good fetch is this old
     hide_after_s: float = 1800.0  # then clear radar and list once it is this old
+    quiet_hours: str = "23:30-06:00"  # local "HH:MM-HH:MM", may cross midnight; "" = none
+    quiet_interval_s: float = 600.0  # seconds between updates during quiet hours
+
+    @property
+    def quiet(self) -> QuietHours | None:
+        return QuietHours.parse(self.quiet_hours)
 
 
 @dataclass(frozen=True)
@@ -189,12 +197,16 @@ def _validate(cfg: Config) -> None:
         raise ConfigError("display.altitude_units must be 'aviation' or 'metric'")
     if not 0 <= cfg.aircraft.featured <= 6:
         raise ConfigError("aircraft.featured must be between 0 and 6")
-    if cfg.update.interval_s < 10:
-        raise ConfigError("update.interval_s must be at least 10 seconds")
+    if cfg.update.interval_s < 10 or cfg.update.quiet_interval_s < 10:
+        raise ConfigError("update.interval_s and update.quiet_interval_s must be at least 10 s")
     if cfg.update.stale_after_s <= 0 or cfg.aircraft.stale_after_s <= 0:
         raise ConfigError("update.stale_after_s and aircraft.stale_after_s must be positive")
     if cfg.update.hide_after_s < cfg.update.stale_after_s:
         raise ConfigError("update.hide_after_s must not be less than update.stale_after_s")
+    try:
+        QuietHours.parse(cfg.update.quiet_hours)
+    except ValueError as exc:
+        raise ConfigError(f"update.quiet_hours: {exc}") from None
     sources = cfg.provider.sources
     if not sources:
         raise ConfigError("provider.sources must name at least one source")

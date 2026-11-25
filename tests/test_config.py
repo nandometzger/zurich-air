@@ -74,7 +74,23 @@ def test_display_staleness_is_separate_from_position_age():
     cfg = Config()
     assert cfg.update.stale_after_s == 300.0
     assert cfg.aircraft.stale_after_s == 60.0
-    assert cfg.update.stale_after_s < cfg.update.hide_after_s == 1800.0
+
+
+def test_update_defaults_hide_old_data_and_slow_down_at_night():
+    update = Config().update
+    assert update.stale_after_s < update.hide_after_s == 1800.0
+    assert str(update.quiet) == "23:30-06:00"
+    assert update.quiet_interval_s == 600.0
+
+
+def test_quiet_hours_override_and_disable(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[update]\nquiet_hours = "22:00-07:00"\nquiet_interval_s = 300\n')
+    update = load_config(path).update
+    assert str(update.quiet) == "22:00-07:00"
+    assert update.quiet_interval_s == 300.0
+    path.write_text('[update]\nquiet_hours = ""\n')
+    assert load_config(path).update.quiet is None
 
 
 @pytest.mark.parametrize(
@@ -88,6 +104,11 @@ def test_display_staleness_is_separate_from_position_age():
         "[provider]\ntimeout_s = 0\n",
         "[update]\nstale_after_s = -1\n",
         "[update]\nhide_after_s = 60\n",  # shorter than stale_after_s
+        '[update]\nquiet_hours = "late"\n',
+        '[update]\nquiet_hours = "23:30-23:30"\n',
+        '[update]\nquiet_hours = "23:30-25:00"\n',
+        "[update]\nquiet_hours = 23\n",
+        "[update]\nquiet_interval_s = 5\n",
     ],
 )
 def test_invalid_provider_and_update_configs_rejected(tmp_path, toml):

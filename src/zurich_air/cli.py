@@ -28,19 +28,23 @@ from zurich_air.rendering.renderer import Renderer, Scene
 
 log = logging.getLogger(__name__)
 LOG_LEVELS = ("debug", "info", "warning", "error")
+CONSOLE_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 SNAPSHOT_LABEL = "SNAPSHOT"  # footer attribution of saved responses, unless told otherwise
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="zurich-air", description=__doc__)
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument(
-        "--log-level", default="info", choices=LOG_LEVELS, help="logging detail (default: info)"
-    )
+    log_help = "logging detail (default: info)"
+    parser.add_argument("--log-level", default="info", choices=LOG_LEVELS, help=log_help)
+    # Also accepted after the command (`zurich-air run --log-level debug`).
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--log-level", default=argparse.SUPPRESS, choices=LOG_LEVELS, help=log_help)
     commands = parser.add_subparsers(dest="command")
 
     preview = commands.add_parser(
         "preview",
+        parents=[common],
         help="render synthetic scenes or saved readsb JSON to PNG files (no hardware or network)",
     )
     source = preview.add_mutually_exclusive_group()
@@ -70,19 +74,25 @@ def main(argv: list[str] | None = None) -> int:
         "--scale", type=int, default=1, help="also write an Nx nearest-neighbour enlargement"
     )
 
-    once = commands.add_parser("once", help="fetch live traffic once and update the display")
+    once = commands.add_parser(
+        "once", parents=[common], help="fetch live traffic once and update the display"
+    )
     _add_config_arg(once)
     _add_mock_args(once)
     once.add_argument(
         "--save-json", type=Path, metavar="FILE", help="also save the raw provider response"
     )
 
-    run = commands.add_parser("run", help="update the display continuously until stopped")
+    run = commands.add_parser(
+        "run", parents=[common], help="update the display continuously until stopped"
+    )
     _add_config_arg(run)
     _add_mock_args(run)
 
     explain = commands.add_parser(
-        "explain", help="show why aircraft are (not) featured: scores, phases and reasons"
+        "explain",
+        parents=[common],
+        help="show why aircraft are (not) featured: scores, phases and reasons",
     )
     _add_config_arg(explain)
     explain.add_argument(
@@ -95,9 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
-    logging.basicConfig(
-        level=args.log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging(args.log_level)
     if args.command == "preview":
         return _preview(args, parser)
     if args.command == "once":
@@ -108,6 +116,11 @@ def main(argv: list[str] | None = None) -> int:
         return _explain(args, parser)
     parser.print_help()
     return 0
+
+
+def configure_logging(level: str) -> None:
+    """Log to stderr at *level*; does nothing if logging is already set up (as under pytest)."""
+    logging.basicConfig(level=level.upper(), format=CONSOLE_FORMAT)
 
 
 def _add_config_arg(parser: argparse.ArgumentParser) -> None:
@@ -142,17 +155,17 @@ def _live(args: argparse.Namespace, parser: argparse.ArgumentParser, *, once: bo
     provider = build_provider(config.provider)
     app = App(config, provider, display)
     if not once:
-        app.run()
-        return 0
+        return app.run()
     try:
-        fresh = app.tick()
+        report = app.tick()
     finally:
         app.close()
-    if fresh and args.save_json and provider.last_source and provider.last_source.last_body:
+    last = provider.last_source
+    if report.fresh and args.save_json and last and last.last_body:
         args.save_json.parent.mkdir(parents=True, exist_ok=True)
-        args.save_json.write_bytes(provider.last_source.last_body)
+        args.save_json.write_bytes(last.last_body)
         print(args.save_json)
-    return 0 if fresh else 1
+    return 0 if report.fresh and not report.errors else 1
 
 
 def _preview(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:

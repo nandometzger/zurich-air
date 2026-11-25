@@ -42,7 +42,7 @@ uv run zurich-air run --config config.toml    # update every minute until Ctrl-C
 
 With the default `mock` display backend the current frame is written to
 `previews/latest.png` (add `--keep-frames` to keep every frame as well); the e-paper
-backend is not implemented yet. Add `--log-level debug` before the command for more detail.
+backend is not implemented yet. Add `--log-level debug` for more detail.
 
 For design work with real data, save a response and render it offline as often as you like:
 
@@ -84,10 +84,10 @@ account. Sources are tried in the order given by `provider.sources`:
   every three minutes. An optional API key can be set in the environment variable
   `ZURICH_AIR_ADSB_LOL_KEY` (never in the config file).
 
-Zurich Air polls once a minute with a generic user agent and backs off after errors and
-rate limits. If you build your own, you are responsible for following each provider's
-current terms of use — check them before you deploy, especially for anything beyond
-personal use.
+Zurich Air polls once a minute (every ten minutes during its night-time quiet hours)
+with a generic user agent and backs off after errors and rate limits. If you build your
+own, you are responsible for following each provider's current terms of use — check them
+before you deploy, especially for anything beyond personal use.
 
 ## License
 

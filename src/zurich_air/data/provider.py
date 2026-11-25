@@ -115,6 +115,7 @@ class ReadsbHttpSource:
         self._last_attempt: float | None = None
         self._cooldown_until = 0.0
         self._errors = 0
+        self.failures = 0  # failed requests since start, for the hourly log summary
         self.last_body: bytes | None = None  # raw body of the last successful response
 
     def __repr__(self) -> str:  # never include headers: they may hold an API key
@@ -163,7 +164,7 @@ class ReadsbHttpSource:
         self.last_body = body
         elapsed = self._clock() - start
         extra = f", quota {quota} left" if quota is not None else ""
-        log.info(
+        log.debug(  # the app logs one line per update with the essentials
             "%s: %d aircraft (%d reported) in %.1f s%s",
             self.label,
             len(snapshot.aircraft),
@@ -179,6 +180,8 @@ class ReadsbHttpSource:
         self._cool_down(max(delay, retry_after or 0.0), reason)
 
     def _cool_down(self, seconds: float, reason: str) -> None:
+        """Called once for every failed request."""
+        self.failures += 1
         seconds = min(seconds, MAX_COOLDOWN_S)
         self._cooldown_until = self._clock() + seconds
         log.warning("%s: %s; next try in %.0f s", self.label, reason, seconds)
@@ -192,6 +195,10 @@ class FallbackProvider:
             raise ValueError("at least one source is required")
         self.sources = tuple(sources)
         self.last_source: ReadsbHttpSource | None = None
+
+    def failure_counts(self) -> dict[str, int]:
+        """Failed requests per source label since start (skipped sources not counted)."""
+        return {source.label: source.failures for source in self.sources}
 
     def fetch(self, lat: float, lon: float, radius_km: float) -> TrafficSnapshot:
         problems = []

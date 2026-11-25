@@ -188,11 +188,12 @@ systemctl status zurich-air --no-pager
 journalctl -u zurich-air -f
 ```
 
-The log should show `running: update every 60 s` and then, once a minute, a line such as
-`adsb.fi: 23 aircraft (61 reported) in 0.9 s` (Ctrl-C stops following the log; the
-service keeps running). Until the e-paper backend exists, the service draws to
-`~/zurich-air/previews/latest.png`, replaced on every change, so it never fills the card.
-To look at it, *on the Mac*:
+The log should show `running: update every 60 s (600 s in quiet hours 23:30-06:00)` and
+then, once a minute, a line such as
+`update: adsb.fi, live, 23 aircraft, featured SWR8 EZY12 DLH4, display refreshed`
+(Ctrl-C stops following the log; the service keeps running). Until the e-paper backend
+exists, the service draws to `~/zurich-air/previews/latest.png`, replaced on every
+change, so it never fills the card. To look at it, *on the Mac*:
 
 ```sh
 scp <user>@zurich-air.local:zurich-air/previews/latest.png . && open latest.png

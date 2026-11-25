@@ -117,6 +117,12 @@ def test_mock_display_keeps_frames_only_when_asked(tmp_path, monkeypatch):
     assert sorted(p.name for p in (tmp_path / "dev").iterdir()) == ["frame-0001.png", "latest.png"]
 
 
+def test_run_exits_with_the_loop_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "build_provider", lambda config: FakeProvider())
+    monkeypatch.setattr(cli.App, "run", lambda self: 1)  # e.g. the display kept failing
+    assert main(["run", "--out", str(tmp_path)]) == 1
+
+
 def test_once_fails_when_no_source_answers(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "build_provider", lambda config: FakeProvider(fail=True))
     saved = tmp_path / "snap.json"
@@ -133,12 +139,28 @@ def test_waveshare_backend_not_available_yet(tmp_path, monkeypatch, capsys):
     assert main(["run", "--config", str(config)]) == 2
 
 
-def test_log_level_option(tmp_path):
-    assert (
-        main(["--log-level", "debug", "preview", "--scene", "empty", "--out", str(tmp_path)]) == 0
-    )
+@pytest.mark.parametrize(
+    ("args", "level"),
+    [
+        ([], "INFO"),
+        (["--log-level", "debug"], "DEBUG"),  # before the command
+        (["preview", "--log-level", "warning"], "WARNING"),  # or after it
+        (["--log-level", "debug", "preview", "--log-level", "error"], "ERROR"),
+    ],
+)
+def test_log_level_option(tmp_path, monkeypatch, args, level):
+    calls = []
+    monkeypatch.setattr(cli.logging, "basicConfig", lambda **kwargs: calls.append(kwargs))
+    if "preview" not in args:
+        args = [*args, "preview"]
+    assert main([*args, "--scene", "empty", "--out", str(tmp_path)]) == 0
+    assert calls[0]["level"] == level
+
+
+@pytest.mark.parametrize("args", [["--log-level", "loud", "preview"], ["run", "--log-level", "x"]])
+def test_log_level_rejects_unknown_levels(args):
     with pytest.raises(SystemExit):
-        main(["--log-level", "loud", "preview"])
+        main(args)
 
 
 def test_explain_snapshot_prints_ranked_table(capsys):
