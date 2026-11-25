@@ -1,0 +1,50 @@
+# Zurich Air — example configuration.
+#
+#   cp config.example.toml config.toml
+#
+# Every key is optional; omitted keys fall back to the built-in Zürich defaults.
+# config.toml is git-ignored. Never put credentials in this file.
+
+[location]
+name = "Zurich"
+latitude = 47.3769          # radar centre
+longitude = 8.5417
+timezone = "Europe/Zurich"  # used for the clock on the display
+
+[airport]
+code = "ZRH"                # label drawn next to the runway glyph
+latitude = 47.458056
+longitude = 8.548056
+# Runway thresholds [lat1, lon1, lat2, lon2]; leave empty for a generic airport marker.
+runways = [
+  [47.45890, 8.53747, 47.45660, 8.57045],  # 10/28
+  [47.48310, 8.53473, 47.46130, 8.56446],  # 14/32
+  [47.47560, 8.53595, 47.44540, 8.55673],  # 16/34
+]
+
+[radar]
+range_km = 80               # radius of the outer ring
+ring_step_km = 20           # spacing of the inner range rings
+trails = true               # dotted history trail behind each aircraft
+
+[display]
+backend = "mock"            # "mock" writes PNGs, "waveshare" drives the e-paper panel
+width = 400
+height = 300
+rotation = 0                # 0, 90, 180 or 270 — applied by the hardware backend
+output_dir = "previews"     # where the mock backend writes PNGs
+altitude_units = "aviation" # "aviation" (FL350 / 4500 ft) or "metric" (10 700 m)
+
+[update]
+interval_s = 60             # seconds between data fetches / display refreshes
+
+[aircraft]
+featured = 5                # aircraft shown in the flight list (0–6)
+max_altitude_ft = 60000
+include_ground = false      # show taxiing / parked aircraft
+stale_after_s = 60          # drop positions older than this
+
+[provider]
+name = "adsb_lol"
+base_url = "https://api.adsb.lol"
+timeout_s = 10
