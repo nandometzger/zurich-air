@@ -55,6 +55,24 @@ def test_preview_snapshot_sequence_builds_trails(tmp_path):
     assert (tmp_path / "later.png").exists()
 
 
+def test_preview_snapshot_source_label(tmp_path):
+    assert snapshot_scene([FIXTURE], Config()).source_label == "SNAPSHOT"
+    assert snapshot_scene([FIXTURE], Config(), "adsb.fi").source_label == "ADSB.FI"
+    args = ["preview", "--snapshot", str(FIXTURE), "--out", str(tmp_path)]
+    assert main([*args, "--source-label", "adsb.fi"]) == 0
+    with Image.open(tmp_path / "readsb_small.png") as labelled:
+        labelled = labelled.copy()
+    assert main(args) == 0
+    with Image.open(tmp_path / "readsb_small.png") as default:
+        assert labelled.tobytes() != default.tobytes()
+
+
+def test_source_label_needs_a_snapshot(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        main(["preview", "--scene", "quiet", "--source-label", "X", "--out", str(tmp_path)])
+    assert exc.value.code == 2
+
+
 @pytest.mark.parametrize("content", ["{not json", '{"msg": "error"}', "[]"])
 def test_preview_snapshot_rejects_bad_files(tmp_path, content):
     bad = tmp_path / "bad.json"

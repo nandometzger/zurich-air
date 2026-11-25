@@ -223,7 +223,7 @@ def test_typical_scene_features_terminal_traffic_and_the_rega_helicopter():
     featured = select_featured(synthetic.scene("typical").snapshot.aircraft, CONFIG)
     assert all(a.altitude_ft is not None and a.altitude_ft < 10_000 for a in featured)
     assert featured[0].type_code == "A388"
-    assert "SAZ020" in [a.callsign for a in featured]
+    assert "SAZ3" in [a.callsign for a in featured]
 
 
 # --- calm list ----------------------------------------------------------------------------

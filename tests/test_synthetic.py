@@ -1,7 +1,9 @@
+import re
 from datetime import datetime
 
 import pytest
 
+from zurich_air.cli import preview_scene
 from zurich_air.config import Config
 from zurich_air.data import synthetic
 from zurich_air.processing.geo import distance_km
@@ -33,7 +35,7 @@ def test_scene_identities_and_trails(name):
 
 @pytest.mark.parametrize(
     ("name", "low", "high"),
-    [("typical", 20, 24), ("busy", 40, 50), ("quiet", 3, 3), ("empty", 0, 0)],
+    [("typical", 15, 20), ("busy", 30, 45), ("quiet", 3, 3), ("empty", 0, 0)],
 )
 def test_scene_sizes(name, low, high):
     assert low <= len(synthetic.scene(name).snapshot.aircraft) <= high
@@ -70,3 +72,20 @@ def test_degraded_scene_has_missing_fields():
 def test_unknown_scene():
     with pytest.raises(ValueError, match="unknown scene"):
         synthetic.scene("rush-hour")
+
+
+@pytest.mark.parametrize("name", synthetic.SCENE_NAMES)
+def test_callsigns_look_real(name):
+    """Airline prefix plus a flight number as used on the radio: SWR8, DLH5LU, EZS14QA."""
+    for a in synthetic.scene(name).snapshot.aircraft:
+        callsign = a.callsign or ""
+        if callsign[:3].isalpha() and callsign[3:4].isdigit():
+            assert not re.fullmatch(r"[A-Z]{3}0\d+", callsign), callsign  # no SWR001
+
+
+def test_typical_scene_features_arrivals_departures_and_more():
+    scene = preview_scene("typical", CONFIG)
+    phases = [scene.phases.get(a.icao) for a in scene.featured]
+    assert phases.count("arrival") >= 2
+    assert phases.count("departure") >= 2
+    assert None in phases  # something that is neither, e.g. the Rega helicopter

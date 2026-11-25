@@ -3,10 +3,12 @@
 Nothing here is ever used by the live data path — this module is imported only by the
 ``preview`` command and the test suite.
 
-The scenes are modelled on real Zürich operations (ILS 14 arrivals from the north-west,
-departures off runways 16 and 28, high-level overflights, a Rega helicopter), but every
-flight is invented: callsigns use real airline ICAO prefixes followed by a running
-three-digit number (SWR001, UAE002, …), and registrations follow an ``HB-?X?`` pattern.
+The scenes are modelled on real Zürich operations on an afternoon with the usual westerly
+concept: arrivals on the ILS 14 from the north-west, departures off runways 16 and 28,
+overflights spread across the sky, a Rega helicopter. Every flight is invented, but looks
+like the real thing: callsigns are real airline ICAO prefixes with the numeric or
+alphanumeric flight numbers airlines use on the radio (SWR8, EDW24, DLH5LU, EZS14QA, …),
+and registrations follow an ``HB-?X?`` pattern.
 """
 
 from __future__ import annotations
@@ -78,74 +80,71 @@ def _final(callsign: str, type_code: str, dist_km: float, speed_kt: float) -> _F
 
 
 _TYPICAL = (
-    # Arrivals: ILS 14 from the north-west, feeders from the north and east.
-    _final("UAE001", "A388", 9, 145),
-    _final("SWR002", "BCS3", 20, 170),
-    _Flight("DLH003", "A20N", THR_14, 332, 33, 7000, 112, 210, -900, turn_deg_per_min=8),
-    _Flight("EDW004", "A320", AIRPORT, 8, 42, 11_000, 196, 290, -1800),
-    _Flight("BAW005", "A320", AIRPORT, 83, 40, 12_000, 262, 300, -1600),
-    _Flight("SWR006", "A333", AIRPORT, 62, 63, 14_000, 248, 320, -1500),
-    _Flight("EZY007", "A319", AIRPORT, 292, 47, 9_000, 118, 260, -1200),
+    # Arrivals: a queue on the ILS 14, one turning onto final, feeders from west and east.
+    _final("UAE87", "A388", 8, 150),
+    _final("SWR93D", "BCS3", 21, 180),
+    _Flight("DLH5LU", "CRJ9", THR_14, 345, 31, 7_000, 165, 220, -700, turn_deg_per_min=-12),
+    _Flight("BAW8KN", "A320", AIRPORT, 272, 41, 10_000, 84, 280, -1500),
+    _Flight("AUA57T", "E195", AIRPORT, 76, 37, 11_000, 262, 290, -1400),
     # Departures: runway 16 to the south, runway 28 to the west.
-    _Flight("SWR008", "B77W", END_16, 172, 9, 5_900, 208, 220, 2600, turn_deg_per_min=18),
-    _Flight("OAW009", "E295", END_16, 176, 27, 11_000, 178, 280, 2100),
-    _Flight("EZS010", "A20N", END_28, 272, 11, 5_600, 268, 210, 2300),
-    _Flight("KLM011", "E190", END_28, 288, 33, 13_000, 302, 300, 1800, turn_deg_per_min=6),
-    # High-level overflights.
-    _Flight("THY012", "A21N", CITY, 300, 56, 37_000, 102, 470),
-    _Flight("RYR013", "B38M", CITY, 42, 50, 39_000, 226, 455),
-    _Flight("WZZ014", "A21N", CITY, 222, 64, 35_000, 64, 480, 64),
-    _Flight("AFR015", "A320", CITY, 196, 36, 34_000, 33, 440),
-    _Flight("QTR016", "B789", CITY, 335, 71, 40_000, 133, 505),
-    _Flight("DLH017", "A321", CITY, 118, 67, 32_000, 296, 430, -64),
-    _Flight("AUA018", "A320", CITY, 78, 27, 36_000, 276, 450),
-    _Flight("ETD019", "B789", CITY, 262, 42, 38_000, 121, 495),
-    # Rega helicopter, a business jet and a light aircraft.
-    _Flight("SAZ020", "EC45", CITY, 150, 13, 2_600, 204, 125, -200, trail=4),
+    _Flight("EDW24", "A359", END_16, 178, 12, 7_100, 214, 230, 2400, turn_deg_per_min=14),
+    _Flight("SWR8", "B77W", END_28, 271, 9, 5_400, 268, 210, 2200),
+    _Flight("OAW726", "E295", END_16, 188, 30, 12_000, 238, 290, 1900, turn_deg_per_min=6),
+    # Overflights, spread out at cruising levels.
+    _Flight("THY7HJ", "A21N", CITY, 302, 51, 37_000, 102, 470),
+    _Flight("RYR4TR", "B38M", CITY, 38, 46, 39_000, 226, 455),
+    _Flight("WZZ1UA", "A21N", CITY, 214, 54, 35_000, 64, 480, 64),
+    _Flight("AFR56GW", "A20N", CITY, 160, 37, 34_000, 25, 440),
+    _Flight("QTR4CY", "B789", CITY, 345, 57, 40_000, 133, 505),
+    _Flight("EZS14QA", "A20N", CITY, 118, 49, 24_000, 296, 410, 1200),
+    _Flight("ETD19", "B789", CITY, 248, 33, 38_000, 121, 495),
+    # Rega on a mission and a light aircraft out of the city.
+    _Flight("SAZ3", "EC45", CITY, 140, 10, 2_600, 204, 125, -200, trail=4),
     _Flight(
-        "HBJXA", "GLF6", CITY, 246, 23, 8_100, 58, 260, -1500, extra={"registration": "HB-JXA"}
-    ),
-    _Flight(
-        "HBCXB", "C172", CITY, 228, 31, 3_500, 236, 95, 0, trail=4,
+        "HBCXB", "C172", CITY, 232, 25, 3_500, 236, 95, 0, trail=4,
         extra={"registration": "HB-CXB"},
     ),
 )  # fmt: skip
 
 _QUIET = (
-    _final("SWR001", "A20N", 14, 160),
-    _Flight("THY002", "A21N", CITY, 300, 48, 37_000, 102, 470),
-    _Flight("SAZ003", "EC45", CITY, 150, 13, 2_600, 204, 125, -200, trail=4),
+    _final("SWR1325", "A20N", 14, 160),
+    _Flight("THY7HJ", "A21N", CITY, 302, 44, 37_000, 102, 470),
+    _Flight("SAZ3", "EC45", CITY, 140, 10, 2_600, 204, 125, -200, trail=4),
 )
 
 # Busy: typical traffic plus a longer arrival queue, more departures and overflights.
 _BUSY_EXTRA = (
-    _final("LOT023", "E195", 29, 180),
-    _final("CLH024", "CRJ9", 36, 200),
-    _Flight("SWR025", "A21N", THR_14, 340, 44, 9_000, 120, 240, -1100, turn_deg_per_min=6),
-    _Flight("DLA026", "E190", AIRPORT, 25, 55, 13_000, 205, 310, -1700),
-    _Flight("AEE027", "A20N", AIRPORT, 95, 58, 15_000, 268, 330, -1400),
-    _Flight("SWR028", "A320", END_16, 168, 16, 8_300, 190, 250, 2400, turn_deg_per_min=10),
-    _Flight("EDW029", "A339", END_28, 270, 22, 9_800, 262, 270, 2000),
-    _Flight("GEC030", "B77L", END_28, 300, 52, 19_000, 315, 380, 1500),
+    _final("LOT41K", "E195", 30, 185),
+    _final("CLH2CA", "CRJ9", 39, 205),
+    _Flight("SWR11MH", "A21N", THR_14, 10, 26, 8_000, 205, 230, -900, turn_deg_per_min=-8),
+    _Flight("DLA5TP", "E190", AIRPORT, 28, 44, 12_000, 210, 300, -1600),
+    _Flight("AEE3SG", "A20N", AIRPORT, 98, 47, 13_000, 270, 320, -1400),
+    _Flight("SWR18L", "A320", END_16, 168, 21, 9_500, 172, 260, 2300),
+    _Flight("EDW71", "A320", END_28, 276, 22, 9_000, 284, 270, 2000, turn_deg_per_min=8),
+    _Flight("GEC8197", "B77L", END_28, 300, 41, 17_000, 318, 360, 1500),
 )
 _BUSY_AIRLINES = (
     ("BAW", "A320"), ("KLM", "B738"), ("DLH", "A20N"), ("AFR", "A20N"), ("IBE", "A321"),
     ("VLG", "A320"), ("SAS", "A20N"), ("FIN", "A321"), ("UAL", "B763"), ("DAL", "A339"),
-    ("ACA", "B788"), ("SIA", "A359"), ("CPA", "A35K"), ("PGT", "B38M"), ("TAP", "A21N"),
+    ("ACA", "B788"), ("SIA", "A359"), ("PGT", "B38M"), ("TAP", "A21N"),
 )  # fmt: skip
 
 
-def _busy_overflights(first_number: int) -> tuple[_Flight, ...]:
+def _busy_overflights() -> tuple[_Flight, ...]:
     rng = random.Random(2412)
     flights = []
-    for i, (prefix, type_code) in enumerate(_BUSY_AIRLINES):
+    for prefix, type_code in _BUSY_AIRLINES:
+        if rng.random() < 0.5:  # a plain flight number or a number with letters
+            number = str(rng.randrange(1, 2000))
+        else:
+            number = str(rng.randrange(1, 100)) + "".join(rng.sample("ABCDEFGHJKLMNPRSTUVWXYZ", 2))
         flights.append(
             _Flight(
-                f"{prefix}{first_number + i:03d}",
+                prefix + number,
                 type_code,
                 CITY,
                 rng.uniform(0, 360),
-                rng.uniform(15, 76),
+                rng.uniform(12, 58),
                 rng.randrange(300, 410, 10) * 100,
                 round(rng.uniform(0, 360)),
                 rng.uniform(420, 510),
@@ -157,22 +156,22 @@ def _busy_overflights(first_number: int) -> tuple[_Flight, ...]:
 
 # Degraded: incomplete and odd data, as real ADS-B feeds produce it.
 _DEGRADED = (
-    _final("SWR001", "A20N", 12, 160),
+    _final("SWR1325", "A20N", 12, 160),
     _Flight(None, None, CITY, 20, 18, 4_200, 300, 180, 900, extra={"registration": "HB-JXC"}),
     _Flight(None, None, AIRPORT, 100, 9, None, None, None, None),  # position only
-    _Flight("SWR004", "B77W", AIRPORT, 300, 26, None, 92, 250, None),  # no altitude
-    _Flight("XAX005", "ZZZZ", CITY, 330, 45, 51_000, 140, 520, 6000),  # unknown codes
+    _Flight("SWR38", "B77W", AIRPORT, 300, 26, None, 92, 250, None),  # no altitude
+    _Flight("XAX5", "ZZZZ", CITY, 330, 45, 51_000, 140, 520, 6000),  # unknown codes
     _Flight("EZS90ZZ", "A20N", CITY, 160, 40, -50, 359.9, 30, -5000),  # odd values
-    _Flight("DLH007", "A320", AIRPORT, 120, 1, 1_400, 280, 15, 0, extra={"on_ground": True}),
+    _Flight("DLH7AB", "A320", AIRPORT, 120, 1, 1_400, 280, 15, 0, extra={"on_ground": True}),
     _Flight(
-        "SWR008", "A320", CITY, 200, 22, 9_000, 211, 260, -2500,
+        "SWR2RJ", "A320", CITY, 200, 22, 9_000, 211, 260, -2500,
         extra={"squawk": "7700", "emergency": True},
     ),
-    _Flight("  ", "A21N", CITY, 60, 60, 24_000, 725.0, 400, 0, extra={"registration": ""}),
+    _Flight("  ", "A21N", CITY, 60, 50, 24_000, 725.0, 400, 0, extra={"registration": ""}),
     _Flight("ABCDEFGHIJK", "LUFTHANSA-LONG", AIRPORT, 250, 12, 3_800, 45, 180, 0),  # too long
     _Flight("SUI10", "F18", CITY, 280, 35, 18_000, 180, 380, 0, extra={"military": True}),
-    _Flight("EZY012", None, CITY, 15, 70, 33_000, None, 440, 0, extra={"position_age_s": 45.0}),
-    _Flight("WZZ013", "A21N", CITY, 95, 79.9, 36_000, 270, 450, 0),  # at the edge of range
+    _Flight("EZY52TC", None, CITY, 15, 52, 33_000, None, 440, 0, extra={"position_age_s": 45.0}),
+    _Flight("WZZ8PU", "A21N", CITY, 95, 59.9, 36_000, 270, 450, 0),  # at the edge of range
 )  # fmt: skip
 
 
@@ -183,7 +182,7 @@ def scene(name: str) -> SyntheticScene:
     if name == "typical":
         flights = _TYPICAL
     elif name == "busy":
-        flights = _TYPICAL + _BUSY_EXTRA + _busy_overflights(len(_TYPICAL) + len(_BUSY_EXTRA) + 1)
+        flights = _TYPICAL + _BUSY_EXTRA + _busy_overflights()
     elif name == "quiet":
         flights = _QUIET
     elif name == "empty":

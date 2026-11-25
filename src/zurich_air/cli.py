@@ -28,6 +28,7 @@ from zurich_air.rendering.renderer import Renderer, Scene
 
 log = logging.getLogger(__name__)
 LOG_LEVELS = ("debug", "info", "warning", "error")
+SNAPSHOT_LABEL = "SNAPSHOT"  # footer attribution of saved responses, unless told otherwise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -56,6 +57,12 @@ def main(argv: list[str] | None = None) -> int:
         metavar="FILE",
         help="saved readsb JSON response(s), oldest first; the last one is rendered and "
         "the earlier ones only build up the trails",
+    )
+    preview.add_argument(
+        "--source-label",
+        metavar="TEXT",
+        help="data attribution in the footer of a --snapshot render, e.g. ADSB.FI "
+        f"(default: {SNAPSHOT_LABEL})",
     )
     _add_config_arg(preview)
     preview.add_argument("--out", type=Path, help="output directory (default: display.output_dir)")
@@ -139,13 +146,16 @@ def _live(args: argparse.Namespace, parser: argparse.ArgumentParser, *, once: bo
 def _preview(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if args.scale < 1:
         parser.error("--scale must be at least 1")
+    if args.source_label is not None and not args.snapshot:
+        parser.error("--source-label only applies to --snapshot renders")
     config = _load(args, parser)
     out = args.out or Path(config.display.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     renderer = Renderer(config)
     if args.snapshot:
         try:
-            scenes = {args.snapshot[-1].stem: snapshot_scene(args.snapshot, config)}
+            label = args.source_label or SNAPSHOT_LABEL
+            scenes = {args.snapshot[-1].stem: snapshot_scene(args.snapshot, config, label)}
         except (OSError, ValueError) as exc:
             parser.error(f"cannot read snapshot: {exc}")
     else:
@@ -237,11 +247,14 @@ def preview_scene(name: str, config: Config) -> Scene:
     return build_scene(data.snapshot, history, config, now=data.now)
 
 
-def snapshot_scene(paths: list[Path], config: Config) -> Scene:
-    """A scene from saved readsb responses, rendered as if live when the last was taken."""
+def snapshot_scene(paths: list[Path], config: Config, source: str = SNAPSHOT_LABEL) -> Scene:
+    """A scene from saved readsb responses, rendered as if live when the last was taken.
+
+    *source* is the attribution shown in the footer.
+    """
     history = TrackHistory()
     scene = None
-    for snapshot in read_snapshots(paths):
+    for snapshot in read_snapshots(paths, source):
         history.update(snapshot)
         previous = [a.icao for a in scene.featured] if scene else ()
         scene = build_scene(snapshot, history, config, snapshot.timestamp, None, previous)
@@ -249,14 +262,14 @@ def snapshot_scene(paths: list[Path], config: Config) -> Scene:
     return scene
 
 
-def read_snapshots(paths: list[Path]) -> list[TrafficSnapshot]:
+def read_snapshots(paths: list[Path], source: str = SNAPSHOT_LABEL) -> list[TrafficSnapshot]:
     """Saved readsb responses, each timed by its file's modification time as a fallback."""
     snapshots = []
     for path in paths:
         fetched_at = datetime.fromtimestamp(path.stat().st_mtime, UTC)
         try:
             payload = json.loads(path.read_bytes())
-            snapshots.append(parse_snapshot(payload, source="snapshot", fetched_at=fetched_at))
+            snapshots.append(parse_snapshot(payload, source=source, fetched_at=fetched_at))
         except ValueError as exc:  # also JSON and Unicode decoding errors
             raise ReadsbError(f"{path}: {exc}") from exc
     return snapshots

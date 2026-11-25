@@ -29,7 +29,7 @@ def test_partial_override(tmp_path):
     path.write_text('[location]\nname = "Bern"\nlatitude = 46.948\nlongitude = 7.447\n')
     cfg = load_config(path)
     assert cfg.location.name == "Bern"
-    assert cfg.radar.range_km == 80.0  # untouched default
+    assert cfg.radar.range_km == 60.0  # untouched default
 
 
 def test_int_promoted_to_float(tmp_path):

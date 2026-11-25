@@ -69,8 +69,8 @@ def test_altitude_ceiling_keeps_unknown_altitude():
 
 
 def test_outside_radar_range_dropped():
-    inside = ac("4b0001", lat=CITY[0] + 0.7)  # ~78 km north
-    outside = ac("4b0002", lat=CITY[0] + 0.75)  # ~83 km north
+    inside = ac("4b0001", lat=CITY[0] + 0.53)  # ~59 km north
+    outside = ac("4b0002", lat=CITY[0] + 0.56)  # ~62 km north
     assert visible_aircraft([inside, outside], CONFIG) == [inside]
 
 

@@ -24,7 +24,7 @@ runways = [
 ]
 
 [radar]
-range_km = 80               # radius of the outer ring
+range_km = 60               # radius of the outer ring
 ring_step_km = 20           # spacing of the inner range rings
 trails = true               # dotted history trail behind each aircraft
 

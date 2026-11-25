@@ -49,7 +49,7 @@ class AirportConfig:
 
 @dataclass(frozen=True)
 class RadarConfig:
-    range_km: float = 80.0
+    range_km: float = 60.0
     ring_step_km: float = 20.0
     trails: bool = True
 
