@@ -23,6 +23,9 @@ config.toml
 previews/*
 !previews/.gitkeep
 
+# Saved provider responses (real data: keep them out of the repository)
+snapshots/
+
 # OS / editor
 .DS_Store
 .idea/
