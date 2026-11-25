@@ -13,10 +13,12 @@ class DisplayUnavailableError(RuntimeError):
     """The configured display backend cannot be used."""
 
 
-def create_display(config: DisplayConfig, output_dir: str | Path | None = None) -> Display:
-    """The backend selected by ``display.backend``."""
+def create_display(
+    config: DisplayConfig, output_dir: str | Path | None = None, *, keep_frames: bool = False
+) -> Display:
+    """The backend selected by ``display.backend``; *keep_frames* applies to the mock."""
     if config.backend == "mock":
-        return MockDisplay(output_dir or config.output_dir)
+        return MockDisplay(output_dir or config.output_dir, keep_frames=keep_frames)
     raise DisplayUnavailableError(
         f'display.backend = "{config.backend}" is not implemented until the panel arrives; '
         'use "mock" for now'

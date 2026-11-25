@@ -74,6 +74,7 @@ def test_display_staleness_is_separate_from_position_age():
     cfg = Config()
     assert cfg.update.stale_after_s == 300.0
     assert cfg.aircraft.stale_after_s == 60.0
+    assert cfg.update.stale_after_s < cfg.update.hide_after_s == 1800.0
 
 
 @pytest.mark.parametrize(
@@ -86,6 +87,7 @@ def test_display_staleness_is_separate_from_position_age():
         '[provider]\nname = "adsb_lol"\n',  # replaced by sources
         "[provider]\ntimeout_s = 0\n",
         "[update]\nstale_after_s = -1\n",
+        "[update]\nhide_after_s = 60\n",  # shorter than stale_after_s
     ],
 )
 def test_invalid_provider_and_update_configs_rejected(tmp_path, toml):

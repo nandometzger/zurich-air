@@ -40,9 +40,9 @@ uv run zurich-air once --config config.toml   # fetch live traffic once → prev
 uv run zurich-air run --config config.toml    # update every minute until Ctrl-C
 ```
 
-With the default `mock` display backend every frame is written to `previews/` (`latest.png`
-is always the newest); the e-paper backend is not implemented yet. Add `--log-level debug`
-before the command for more detail.
+With the default `mock` display backend the current frame is written to
+`previews/latest.png` (add `--keep-frames` to keep every frame as well); the e-paper
+backend is not implemented yet. Add `--log-level debug` before the command for more detail.
 
 For design work with real data, save a response and render it offline as often as you like:
 

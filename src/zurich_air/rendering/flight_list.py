@@ -46,10 +46,17 @@ def draw_flight_list(
     featured: Sequence[Aircraft],
     config: Config,
     phases: Mapping[str, Phase] | None = None,
+    *,
+    waiting: bool = False,
 ) -> None:
+    """The rows; with *waiting* (no usable data) a calm note instead."""
     draw = ImageDraw.Draw(image)
+    if waiting:
+        _draw_note(draw, box, "WAITING FOR DATA")
+        return
     if not featured:
-        _draw_empty(draw, box, config)
+        within = f"within {formatting.distance(config.radar.range_km).lower()}"
+        _draw_note(draw, box, "NO AIRCRAFT", within)
         return
     phases = phases or {}
     cap = cap_height(font(CALLSIGN, bold=True))
@@ -115,8 +122,8 @@ def _draw_row(
     draw_text(draw, text_left, baseline, text, small)
 
 
-def _draw_empty(draw: ImageDraw.ImageDraw, box: Box, config: Config) -> None:
+def _draw_note(draw: ImageDraw.ImageDraw, box: Box, title: str, detail: str = "") -> None:
     middle = (box.top + box.bottom) // 2
-    draw_text(draw, box.left, middle - 2, "NO AIRCRAFT", font(SMALL, bold=True), tracking=TRACKING)
-    within = f"within {formatting.distance(config.radar.range_km).lower()}"
-    draw_text(draw, box.left, middle + 12, within, font(SMALL))
+    draw_text(draw, box.left, middle - 2, title, font(SMALL, bold=True), tracking=TRACKING)
+    if detail:
+        draw_text(draw, box.left, middle + 12, detail, font(SMALL))

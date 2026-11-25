@@ -58,9 +58,39 @@ def test_without_fetch_time_snapshot_time_decides():
 
 def test_no_data_at_all():
     scene = build_scene(None, TrackHistory(), CONFIG, now=T0)
-    assert scene.status == "stale"
+    assert scene.status == "waiting"
     assert scene.aircraft == [] and scene.featured == []
+    assert scene.updated_at is None  # never any data: no "since" to show
     assert scene.source_label is None
+    assert scene.now == T0
+
+
+def test_long_outage_hides_the_frozen_traffic():
+    history = TrackHistory()
+    data = snapshot()
+    history.update(snapshot(T0 - timedelta(minutes=1)))
+    history.update(data)
+    hide_after = timedelta(seconds=CONFIG.update.hide_after_s)
+
+    still = build_scene(data, history, CONFIG, T0 + hide_after, T0)
+    assert still.status == "stale"
+    assert len(still.aircraft) == 2
+
+    later = T0 + hide_after + timedelta(seconds=1)
+    hidden = build_scene(data, history, CONFIG, later, T0, previous_featured=("4b0001",))
+    assert hidden.status == "waiting"
+    assert hidden.aircraft == [] and hidden.featured == [] and hidden.trails == {}
+    assert hidden.updated_at == T0  # "NO DATA SINCE" the last good data
+    assert hidden.now == later
+    assert hidden.source_label is None
+
+
+def test_hide_threshold_is_configurable():
+    config = dataclasses.replace(
+        CONFIG, update=dataclasses.replace(CONFIG.update, hide_after_s=CONFIG.update.stale_after_s)
+    )
+    late = T0 + timedelta(seconds=CONFIG.update.stale_after_s + 1)
+    assert build_scene(snapshot(), None, config, late, T0).status == "waiting"
 
 
 def test_trails_from_history_only_for_visible_aircraft():

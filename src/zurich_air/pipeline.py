@@ -33,14 +33,22 @@ def build_scene(
     the snapshot's own timestamp is used (saved and synthetic data).
     *previous_featured* lists the ICAO addresses of the last frame's flight list, in
     order, so the list stays calm (see processing/ranking.py).
+
+    Data older than ``update.stale_after_s`` stays on screen, marked stale; older than
+    ``update.hide_after_s`` it is no longer drawn, so that aircraft long gone never pass
+    for current traffic.
     """
     if snapshot is None:
-        return Scene(aircraft=[], featured=[], updated_at=now, status="stale", now=now)
+        return Scene(aircraft=[], featured=[], updated_at=None, status="waiting", now=now)
+    age_s = (now - (last_success or snapshot.timestamp)).total_seconds()
+    if age_s > config.update.hide_after_s:
+        return Scene(
+            aircraft=[], featured=[], updated_at=snapshot.timestamp, status="waiting", now=now
+        )
 
     aircraft = visible_aircraft(snapshot.aircraft, config)
     featured = rank(aircraft, config, previous_featured)[: config.aircraft.featured]
     trails = history.trails(aircraft) if history is not None and config.radar.trails else {}
-    age_s = (now - (last_success or snapshot.timestamp)).total_seconds()
     return Scene(
         aircraft=aircraft,
         featured=[c.aircraft for c in featured],

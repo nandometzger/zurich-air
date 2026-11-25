@@ -26,9 +26,10 @@ class Scene:
 
     aircraft: Sequence[Aircraft]  # plotted on the radar
     featured: Sequence[Aircraft]  # flight list, best first; numbered 1..n on the radar
-    updated_at: datetime  # timezone-aware time the traffic data refers to
+    updated_at: datetime | None  # timezone-aware time the traffic data refers to, if any
     trails: Mapping[str, Sequence[tuple[float, float]]] = field(default_factory=dict)
-    status: Literal["live", "stale"] = "live"
+    # "stale": old data, still drawn; "waiting": no usable data, an empty radar
+    status: Literal["live", "stale", "waiting"] = "live"
     now: datetime | None = None  # clock in the header; defaults to updated_at
     source_label: str | None = None  # small data attribution in the footer, e.g. "ADSB.FI"
     phases: Mapping[str, Phase] = field(default_factory=dict)  # featured ICAO -> phase, if known
@@ -45,7 +46,14 @@ class Renderer:
         draw = ImageDraw.Draw(image)
         self._draw_header(draw, scene)
         draw_radar(image, self.layout, self.config, scene.aircraft, scene.featured, scene.trails)
-        draw_flight_list(image, self.layout.flight_list, scene.featured, self.config, scene.phases)
+        draw_flight_list(
+            image,
+            self.layout.flight_list,
+            scene.featured,
+            self.config,
+            scene.phases,
+            waiting=scene.status == "waiting",
+        )
         self._draw_footer(draw, scene)
         return image
 
@@ -55,15 +63,17 @@ class Renderer:
         title = f"{self.config.location.name.upper()}{formatting.SEPARATOR}LIVE AIR TRAFFIC"
         draw_text(draw, lay.margin, lay.header_baseline, title, fnt, tracking=TRACKING)
 
-        clock = formatting.clock(scene.now or scene.updated_at, self.config.location.timezone)
         right = lay.width - lay.margin
-        width = draw_text(
-            draw, right, lay.header_baseline, clock, fnt, tracking=TRACKING, align="right"
-        )
-        radius = 3
-        cx = right - width - 6 - radius
-        cy = lay.header_baseline - cap_height(fnt) // 2
-        draw_dot(draw, cx, cy, radius, filled=scene.status == "live")
+        when = scene.now or scene.updated_at
+        if when is not None:
+            clock = formatting.clock(when, self.config.location.timezone)
+            width = draw_text(
+                draw, right, lay.header_baseline, clock, fnt, tracking=TRACKING, align="right"
+            )
+            radius = 3
+            cx = right - width - 6 - radius
+            cy = lay.header_baseline - cap_height(fnt) // 2
+            draw_dot(draw, cx, cy, radius, filled=scene.status == "live")
         draw.line((lay.margin, lay.header_rule_y, right - 1, lay.header_rule_y), fill=BLACK)
 
     def _draw_footer(self, draw: ImageDraw.ImageDraw, scene: Scene) -> None:
@@ -71,13 +81,17 @@ class Renderer:
         right = lay.width - lay.margin
         draw.line((lay.margin, lay.footer_rule_y, right - 1, lay.footer_rule_y), fill=BLACK)
         regular = font(SMALL)
-        count = f"{len(scene.aircraft)} AIRCRAFT"
-        summary = count + formatting.SEPARATOR + formatting.distance(self.config.radar.range_km)
+        summary = formatting.distance(self.config.radar.range_km)
+        if scene.status != "waiting":  # without data, the count would be a guess
+            summary = f"{len(scene.aircraft)} AIRCRAFT{formatting.SEPARATOR}{summary}"
         draw_text(draw, lay.margin, lay.footer_baseline, summary, regular, tracking=TRACKING)
 
-        if scene.status == "stale":
-            since = formatting.clock(scene.updated_at, self.config.location.timezone)
-            text, fnt = f"NO DATA SINCE {since}", font(SMALL, bold=True)
+        if scene.status != "live":
+            text, fnt = "NO DATA", font(SMALL, bold=True)
+            if scene.updated_at is not None:
+                text += (
+                    f" SINCE {formatting.clock(scene.updated_at, self.config.location.timezone)}"
+                )
         elif scene.source_label:
             text, fnt = scene.source_label.upper(), regular
         else:

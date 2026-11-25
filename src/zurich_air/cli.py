@@ -72,13 +72,14 @@ def main(argv: list[str] | None = None) -> int:
 
     once = commands.add_parser("once", help="fetch live traffic once and update the display")
     _add_config_arg(once)
-    once.add_argument("--out", type=Path, help="mock display output directory")
+    _add_mock_args(once)
     once.add_argument(
         "--save-json", type=Path, metavar="FILE", help="also save the raw provider response"
     )
 
     run = commands.add_parser("run", help="update the display continuously until stopped")
     _add_config_arg(run)
+    _add_mock_args(run)
 
     explain = commands.add_parser(
         "explain", help="show why aircraft are (not) featured: scores, phases and reasons"
@@ -113,6 +114,17 @@ def _add_config_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", type=Path, help="TOML config file (default: built-in)")
 
 
+def _add_mock_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--out", type=Path, help="mock display output directory (default: display.output_dir)"
+    )
+    parser.add_argument(
+        "--keep-frames",
+        action="store_true",
+        help="mock display: keep every frame as frame-NNNN.png, not only latest.png",
+    )
+
+
 def _load(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Config:
     try:
         return load_config(args.config)
@@ -123,7 +135,7 @@ def _load(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Config:
 def _live(args: argparse.Namespace, parser: argparse.ArgumentParser, *, once: bool) -> int:
     config = _load(args, parser)
     try:
-        display = create_display(config.display, getattr(args, "out", None))
+        display = create_display(config.display, args.out, keep_frames=args.keep_frames)
     except DisplayUnavailableError as exc:
         print(f"zurich-air: error: {exc}", file=sys.stderr)
         return 2

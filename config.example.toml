@@ -39,6 +39,7 @@ altitude_units = "aviation" # "aviation" (FL350 / 4500 ft) or "metric" (10 700 m
 [update]
 interval_s = 60             # seconds between data fetches / display refreshes
 stale_after_s = 300         # show "NO DATA SINCE …" once the last good fetch is this old
+hide_after_s = 1800         # then clear radar and flight list and show "WAITING FOR DATA"
 
 [aircraft]
 featured = 5                # aircraft shown in the flight list (0–6)

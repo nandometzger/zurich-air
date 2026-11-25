@@ -109,6 +109,14 @@ def test_once_shows_a_frame_and_saves_the_response(tmp_path, monkeypatch):
     assert saved.read_bytes() == FIXTURE.read_bytes()
 
 
+def test_mock_display_keeps_frames_only_when_asked(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "build_provider", lambda config: FakeProvider())
+    assert main(["once", "--out", str(tmp_path / "plain")]) == 0
+    assert [p.name for p in (tmp_path / "plain").iterdir()] == ["latest.png"]
+    assert main(["once", "--out", str(tmp_path / "dev"), "--keep-frames"]) == 0
+    assert sorted(p.name for p in (tmp_path / "dev").iterdir()) == ["frame-0001.png", "latest.png"]
+
+
 def test_once_fails_when_no_source_answers(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "build_provider", lambda config: FakeProvider(fail=True))
     saved = tmp_path / "snap.json"

@@ -68,6 +68,7 @@ class DisplayConfig:
 class UpdateConfig:
     interval_s: float = 60.0
     stale_after_s: float = 300.0  # show "no data" once the last good fetch is this old
+    hide_after_s: float = 1800.0  # then clear radar and list once it is this old
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,8 @@ def _validate(cfg: Config) -> None:
         raise ConfigError("update.interval_s must be at least 10 seconds")
     if cfg.update.stale_after_s <= 0 or cfg.aircraft.stale_after_s <= 0:
         raise ConfigError("update.stale_after_s and aircraft.stale_after_s must be positive")
+    if cfg.update.hide_after_s < cfg.update.stale_after_s:
+        raise ConfigError("update.hide_after_s must not be less than update.stale_after_s")
     sources = cfg.provider.sources
     if not sources:
         raise ConfigError("provider.sources must name at least one source")

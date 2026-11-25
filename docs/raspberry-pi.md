@@ -190,19 +190,13 @@ journalctl -u zurich-air -f
 
 The log should show `running: update every 60 s` and then, once a minute, a line such as
 `adsb.fi: 23 aircraft (61 reported) in 0.9 s` (Ctrl-C stops following the log; the
-service keeps running). With the mock display, each frame is written to
-`~/zurich-air/previews/`, and `latest.png` is always the newest. To look at it, *on the
-Mac*:
+service keeps running). Until the e-paper backend exists, the service draws to
+`~/zurich-air/previews/latest.png`, replaced on every change, so it never fills the card.
+To look at it, *on the Mac*:
 
 ```sh
 scp <user>@zurich-air.local:zurich-air/previews/latest.png . && open latest.png
 ```
-
-> **Note:** until the e-paper backend exists, the service writes one PNG of about 4 KB a
-> minute (some 6 MB a day). That is fine for testing; if the Pi will sit idle for weeks
-> before the panel arrives, stop it with `sudo systemctl disable --now zurich-air` and
-> clear old frames with `rm ~/zurich-air/previews/frame-*.png`. Running the install
-> script again re-enables the service.
 
 ### Settings and the optional API key
 

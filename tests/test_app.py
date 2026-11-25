@@ -93,7 +93,7 @@ def test_failure_keeps_last_data_then_turns_stale():
     assert display.frames[-1].tobytes() != display.frames[0].tobytes()
 
 
-def test_failure_without_any_data_shows_stale_empty_frame():
+def test_failure_without_any_data_shows_waiting_frame():
     display = MemoryDisplay()
     app = App(CONFIG, FakeProvider(ProviderError("down")), display)
     assert app.tick(T0) is False

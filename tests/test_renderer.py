@@ -70,6 +70,29 @@ def test_status_and_source_label_change_the_image():
     assert len(images) == 3
 
 
+def test_waiting_frame_shows_an_empty_radar_and_a_calm_note(monkeypatch):
+    from zurich_air.rendering import renderer
+
+    texts = []
+    original = renderer.draw_text
+
+    def record(draw, x, baseline, text, *args, **kwargs):
+        texts.append(text)
+        return original(draw, x, baseline, text, *args, **kwargs)
+
+    monkeypatch.setattr(renderer, "draw_text", record)
+    typical = preview_scene("typical", CONFIG)
+    empty = dataclasses.replace(typical, aircraft=[], featured=[], trails={}, status="waiting")
+    list_texts = drawn_texts(monkeypatch, empty)
+    assert list_texts == ["WAITING FOR DATA"]  # not "NO AIRCRAFT": nothing is known
+    assert "NO DATA SINCE 15:42" in texts
+    assert not any("AIRCRAFT" in t for t in texts)  # no count without data
+
+    texts.clear()
+    render(dataclasses.replace(empty, updated_at=None))  # never had any data
+    assert "NO DATA" in texts
+
+
 def test_six_featured_rows_fit():
     config = dataclasses.replace(CONFIG, aircraft=dataclasses.replace(CONFIG.aircraft, featured=6))
     image = render(preview_scene("busy", config), config)
