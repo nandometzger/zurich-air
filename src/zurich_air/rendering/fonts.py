@@ -47,7 +47,12 @@ class Face:
 
 @cache
 def _truetype(size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(str(FONT_DIR / "B612-Regular.ttf"), size)
+    # Force the basic layout engine: Pillow wheels with libraqm (e.g. Linux, so the Pi)
+    # otherwise apply HarfBuzz shaping and set text at different widths than builds
+    # without it (e.g. macOS), and previews would no longer match the panel pixel for pixel.
+    return ImageFont.truetype(
+        str(FONT_DIR / "B612-Regular.ttf"), size, layout_engine=ImageFont.Layout.BASIC
+    )
 
 
 @cache

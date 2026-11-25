@@ -125,3 +125,12 @@ def test_long_operator_and_model_fall_back_to_the_model(monkeypatch):
     texts = drawn_texts(monkeypatch, scene)
     assert "Lufthansa Cargo · 777" not in texts  # too wide even as a family
     assert "777-200LR" in texts
+
+
+def test_fonts_use_basic_layout_engine_on_every_platform():
+    # Guards against raqm/HarfBuzz shaping changing text widths between macOS and the Pi.
+    from PIL import ImageFont
+
+    from zurich_air.rendering.fonts import font
+
+    assert font(10).font.layout_engine == ImageFont.Layout.BASIC
