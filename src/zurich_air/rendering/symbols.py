@@ -1,7 +1,9 @@
-"""Small vector symbols drawn pixel by pixel: aircraft, badges, arrows, triangles.
+"""Small symbols drawn pixel by pixel: aircraft, badges, arrows, triangles.
 
-Rotated shapes are rasterised with 8x supersampling and thresholded, which keeps them symmetric
-and recognisable at 7 to 15 px — better than drawing the polygon directly at 1 bit.
+Aircraft rotate freely, so they are rasterised with 8x supersampling and thresholded, which
+keeps them symmetric and recognisable at 7 to 15 px — better than drawing the polygon
+directly at 1 bit. Arrows are too small for that: they point in one of eight directions
+and are drawn as 1 px lines, like the strokes of the text beside them.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from functools import lru_cache
 from PIL import Image, ImageDraw, ImageFilter
 
 from zurich_air.rendering.fonts import cap_height, draw_text, font, text_width
-from zurich_air.rendering.layout import TINY
+from zurich_air.rendering.layout import BADGE_H, BADGE_W, TINY
 
 BLACK, WHITE = 0, 255
 _SUPERSAMPLE = 8
@@ -41,7 +43,6 @@ AIRLINER = _mirrored(
     ]
 )
 DART = _mirrored([(0.0, -1.0), (0.78, 0.85), (0.0, 0.42)])
-ARROW = _mirrored([(0.0, -1.0), (0.75, -0.15), (0.22, -0.15), (0.22, 1.0), (0.0, 1.0)])
 
 
 class Sprite:
@@ -110,10 +111,6 @@ _HELICOPTER_BODY = _mirrored(
 )  # fmt: skip
 
 
-# Numbered badge: a solid black box with a white digit, used on the radar and in the list.
-BADGE_W, BADGE_H = 9, 11
-
-
 def draw_badge(draw: ImageDraw.ImageDraw, left: int, top: int, number: int) -> None:
     """A black BADGE_W x BADGE_H box at (left, top) with *number* centred in white."""
     digit = str(number)
@@ -122,6 +119,36 @@ def draw_badge(draw: ImageDraw.ImageDraw, left: int, top: int, number: int) -> N
     x = left + (BADGE_W - text_width(digit, fnt)) // 2
     baseline = top + (BADGE_H + cap_height(fnt)) // 2
     draw_text(draw, x, baseline, digit, fnt, fill=WHITE)
+
+
+ARROW_SIZE = 7  # px square; odd, so the shaft of a straight arrow is centred
+_ARROW_HEAD = 3  # px, length of each side of the head
+
+
+@lru_cache(maxsize=8)
+def arrow(octant: int) -> Image.Image:
+    """Mask of a line arrow pointing to compass octant 0 (N), 1 (NE), … 7 (NW)."""
+    n, mid, head = ARROW_SIZE - 1, ARROW_SIZE // 2, _ARROW_HEAD
+    mask = Image.new("1", (ARROW_SIZE, ARROW_SIZE), 0)
+    draw = ImageDraw.Draw(mask)
+    if octant % 2:  # diagonal, drawn pointing NE
+        draw.line((0, n, n, 0), fill=255)
+        draw.line((n - head, 0, n, 0), fill=255)
+        draw.line((n, 0, n, head), fill=255)
+        turns = (1 - octant) // 2 % 4
+    else:  # straight, drawn pointing E
+        draw.line((0, mid, n, mid), fill=255)
+        draw.line((n - head, mid - head, n, mid), fill=255)
+        draw.line((n - head, mid + head, n, mid), fill=255)
+        turns = (2 - octant) // 2 % 4
+    for _ in range(turns):  # quarter turns anticlockwise
+        mask = mask.transpose(Image.Transpose.ROTATE_90)
+    return mask
+
+
+def draw_arrow(image: Image.Image, left: int, top: int, track_deg: float) -> None:
+    """An ARROW_SIZE arrow at (left, top) along *track_deg*, rounded to the nearest octant."""
+    image.paste(BLACK, (left, top), arrow(round(track_deg / 45) % 8))
 
 
 def draw_trend(draw: ImageDraw.ImageDraw, cx: int, baseline: int, up: bool, size: int = 4) -> int:

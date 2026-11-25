@@ -6,6 +6,8 @@ from zurich_air.cli import preview_scene
 from zurich_air.config import Config, DisplayConfig
 from zurich_air.data import synthetic
 from zurich_air.data.aircraft import Aircraft
+from zurich_air.rendering import flight_list
+from zurich_air.rendering.fonts import ELLIPSIS
 from zurich_air.rendering.renderer import Renderer, Scene
 
 CONFIG = Config()
@@ -80,3 +82,46 @@ def test_other_display_size_and_metric_units():
     )
     image = render(preview_scene("typical", config), config)
     assert image.size == (640, 384)
+
+
+def drawn_texts(monkeypatch, scene, config=CONFIG):
+    """Every string the flight list draws, in order."""
+    texts = []
+    original = flight_list.draw_text
+
+    def record(draw, x, baseline, text, *args, **kwargs):
+        texts.append(text)
+        return original(draw, x, baseline, text, *args, **kwargs)
+
+    monkeypatch.setattr(flight_list, "draw_text", record)
+    render(scene, config)
+    return texts
+
+
+def test_flight_list_labels_arrivals_and_departures(monkeypatch):
+    scene = preview_scene("typical", CONFIG)
+    texts = drawn_texts(monkeypatch, scene)
+    phases = [scene.phases.get(a.icao) for a in scene.featured]
+    labels = [t for t in texts if t in ("ARR", "DEP")]
+    assert labels == [{"arrival": "ARR", "departure": "DEP"}[p] for p in phases if p]
+    assert "ARR" in labels and "DEP" in labels
+    without = drawn_texts(monkeypatch, dataclasses.replace(scene, phases={}))
+    assert not {"ARR", "DEP"} & set(without)
+
+
+def test_second_line_shortens_by_meaning_never_with_an_ellipsis(monkeypatch):
+    scene = preview_scene("typical", CONFIG)
+    texts = drawn_texts(monkeypatch, scene)
+    assert "Swiss · 777" in texts  # 777-300ER does not fit beside DEP
+    assert not any(ELLIPSIS in t for t in texts)
+
+
+def test_long_operator_and_model_fall_back_to_the_model(monkeypatch):
+    long = Aircraft(
+        "4b0001", 47.40, 8.55, callsign="GEC8197", type_code="B77L", altitude_ft=17_000,
+        track_deg=318, vertical_rate_fpm=1500,
+    )  # fmt: skip
+    scene = Scene(aircraft=[long], featured=[long], updated_at=NOW, phases={"4b0001": "departure"})
+    texts = drawn_texts(monkeypatch, scene)
+    assert "Lufthansa Cargo · 777" not in texts  # too wide even as a family
+    assert "777-200LR" in texts

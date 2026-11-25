@@ -233,6 +233,28 @@ def type_name(type_code: str | None) -> str | None:
     return AIRCRAFT_TYPES.get(type_code.upper(), type_code.upper())
 
 
+def type_family(type_code: str | None) -> str | None:
+    """The family of a known type, for when the full model name does not fit.
+
+    Derived from the model name by dropping the variant: ``A220-300`` → ``A220``,
+    ``777-300ER`` → ``777``, ``737 MAX 8`` → ``737 MAX``, ``ATR 72-600`` → ``ATR 72``,
+    ``Citation Latitude`` → ``Citation``. Names without a variant (``A320neo``, ``MD-11``)
+    are their own family. Always a prefix of the model name; ``None`` for unknown codes.
+    """
+    model = AIRCRAFT_TYPES.get((type_code or "").upper())
+    if model is None:
+        return None
+    if " MAX " in model:
+        return model.split(" MAX ")[0] + " MAX"
+    base, dash, _ = model.partition("-")
+    if dash and base[-1].isdigit():  # a variant number: "A350-1000", "Dash 8-400"
+        return base
+    word, space, _ = model.partition(" ")
+    if space and word.isalpha() and word.istitle():  # a product line: "Falcon 7X"
+        return word
+    return model
+
+
 def is_rescue(aircraft: Aircraft) -> bool:
     """True for air rescue flights, by callsign prefix (Rega flies as SAZ…)."""
     callsign = (aircraft.callsign or "").upper()

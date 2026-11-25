@@ -1,14 +1,14 @@
-"""Screen geometry and the type scale, derived from the display size.
+"""Screen geometry, spacing and the type scale, derived from the display size.
 
 At 400 x 300 px::
 
     12 ┌ ZURICH · LIVE AIR TRAFFIC ───────────────── ● 15:42 ┐   header, baseline y=22
     30 ├──────────────────────────────────────────────────────┤   hairline
-       │   ╭──── radar ────╮      ▮1 SWR001        ▼ 2900 FT  │
-       │   │   r = 112 px  │         Emirates · A380     ↘ SE │   flight list
+       │   ╭──── radar ────╮      ▮1 UAE87        ▼ 2800 FT   │
+       │   │   r = 112 px  │         Emirates · A380      ARR │   flight list
        │   ╰───────────────╯      ...                         │
    272 ├──────────────────────────────────────────────────────┤   hairline
-   288 └ 22 AIRCRAFT · 80 KM ───────────────── SYNTHETIC DATA ┘   footer baseline
+   288 └ 17 AIRCRAFT · 60 KM ───────────────── SYNTHETIC DATA ┘   footer baseline
 """
 
 from __future__ import annotations
@@ -29,6 +29,18 @@ TRACKING = 1  # extra letter-spacing for uppercase labels
 
 _TITLE_CAP = 10  # cap height of B612 Bold at TITLE size
 _SMALL_CAP = 8  # cap height of B612 Regular at SMALL size
+
+# Numbered badges, on the radar and in the flight list.
+BADGE_W, BADGE_H = 9, 11
+
+# Flight list.
+LINE_GAP = 14  # callsign baseline to the baseline of the second line
+MAX_ROW_PITCH = 49
+TEXT_INDENT = BADGE_W + 6
+TREND_SIZE = 4  # rows of the climb/descend triangle
+SYMBOL_GAP = 3  # between a symbol and its text
+MIN_SPACE = 8  # between the left and right parts of a line
+LABEL_SPACE = 12  # before ARR / DEP, which would otherwise read as part of the model name
 
 
 @dataclass(frozen=True)

@@ -11,7 +11,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from zurich_air.data.aircraft import Aircraft
-from zurich_air.data.reference import operator_name, type_name
+from zurich_air.data.reference import operator_name, type_family, type_name
 from zurich_air.processing.geo import M_PER_FT
 
 TRANSITION_ALTITUDE_FT = 7000  # Swiss transition altitude: flight levels above this
@@ -55,12 +55,29 @@ def description(aircraft: Aircraft) -> str:
     Falls back to the registration when neither is known, unless the label already shows
     it (private flights often use the registration without its hyphen as callsign).
     """
-    parts = [operator_name(aircraft.callsign), type_name(aircraft.type_code)]
-    text = SEPARATOR.join(p for p in parts if p)
+    return next(iter(descriptions(aircraft)), "")
+
+
+def descriptions(aircraft: Aircraft) -> list[str]:
+    """The description from most to least detailed, for the first one that fits.
+
+    A long name is shortened by meaning, never cut off: ``airBaltic · A220-300`` →
+    ``airBaltic · A220`` → ``A220-300`` → ``A220``. Empty when nothing is known.
+    """
+    operator = operator_name(aircraft.callsign)
+    model = type_name(aircraft.type_code)
+    family = type_family(aircraft.type_code) or model  # unknown codes have no family
+    if operator and model:
+        candidates = [f"{operator}{SEPARATOR}{model}", f"{operator}{SEPARATOR}{family}"]
+        candidates += [model, family]
+    else:
+        candidates = [operator, model, family]
+    result = list(dict.fromkeys(c for c in candidates if c))  # in order, without repeats
     registration = (aircraft.registration or "").strip()
-    if not text and registration.replace("-", "") != aircraft.label.replace("-", ""):
-        text = registration
-    return text
+    shown = registration.replace("-", "") == aircraft.label.replace("-", "")  # as the label
+    if not result and registration and not shown:
+        result = [registration]
+    return result
 
 
 def clock(moment: datetime, timezone: str) -> str:

@@ -45,7 +45,7 @@ class Renderer:
         draw = ImageDraw.Draw(image)
         self._draw_header(draw, scene)
         draw_radar(image, self.layout, self.config, scene.aircraft, scene.featured, scene.trails)
-        draw_flight_list(image, self.layout.flight_list, scene.featured, self.config)
+        draw_flight_list(image, self.layout.flight_list, scene.featured, self.config, scene.phases)
         self._draw_footer(draw, scene)
         return image
 

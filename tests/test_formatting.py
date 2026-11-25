@@ -52,6 +52,31 @@ def test_description():
     assert formatting.description(Aircraft("4b0001", 47.0, 8.0)) == ""
 
 
+@pytest.mark.parametrize(
+    ("callsign", "type_code", "expected"),
+    [
+        ("BTI6RT", "BCS3", ["airBaltic · A220-300", "airBaltic · A220", "A220-300", "A220"]),
+        ("SWR8", "B38M", ["Swiss · 737 MAX 8", "Swiss · 737 MAX", "737 MAX 8", "737 MAX"]),
+        ("UAE87", "A388", ["Emirates · A380", "A380"]),  # no shorter family
+        ("SWR8", None, ["Swiss"]),
+        ("ZZZ3PR", "A320", ["A320"]),  # unknown operator
+        ("XAX5", "ZZZZ", ["ZZZZ"]),  # unknown type: the raw code, no family
+    ],
+)
+def test_descriptions_shorten_by_meaning(callsign, type_code, expected):
+    aircraft = Aircraft("4b0001", 47.0, 8.0, callsign=callsign, type_code=type_code)
+    assert formatting.descriptions(aircraft) == expected
+    assert formatting.description(aircraft) == expected[0]
+
+
+def test_descriptions_fall_back_to_the_registration():
+    unknown = Aircraft("4b0001", 47.0, 8.0, callsign="XAX5", registration="HB-JXA")
+    assert formatting.descriptions(unknown) == ["HB-JXA"]
+    no_callsign = Aircraft("4b0001", 47.0, 8.0, registration="HB-JXA")
+    assert formatting.descriptions(no_callsign) == []  # the label already shows it
+    assert formatting.descriptions(Aircraft("4b0001", 47.0, 8.0)) == []
+
+
 def test_clock_uses_local_time():
     moment = datetime(2026, 12, 24, 14, 42, tzinfo=UTC)
     assert formatting.clock(moment, "Europe/Zurich") == "15:42"
