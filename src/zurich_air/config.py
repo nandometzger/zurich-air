@@ -12,6 +12,7 @@ import typing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from zurich_air.schedule import QuietHours
 
@@ -187,6 +188,7 @@ def _coerce(value: Any, hint: Any, key: str) -> Any:
 def _validate(cfg: Config) -> None:
     if not -90 <= cfg.location.latitude <= 90 or not -180 <= cfg.location.longitude <= 180:
         raise ConfigError("location latitude/longitude out of range")
+    _validate_timezone(cfg.location.timezone)
     if cfg.radar.range_km <= 0 or cfg.radar.ring_step_km <= 0:
         raise ConfigError("radar.range_km and radar.ring_step_km must be positive")
     if cfg.display.backend not in {"mock", "waveshare"}:
@@ -224,6 +226,24 @@ def _validate(cfg: Config) -> None:
         if len(runway) != 4:
             raise ConfigError("airport.runways entries must be [lat1, lon1, lat2, lon2]")
     _validate_ranking(cfg.ranking)
+
+
+def _validate_timezone(name: str) -> None:
+    """*name* is a zone the time zone database knows: the system's, or the tzdata package's.
+
+    The app would otherwise stop with a traceback when it first converts a time.
+    """
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        if not available_timezones():  # no database at all, so no name would do
+            raise ConfigError(
+                f"location.timezone: cannot look up {name!r}: this system has no time zone "
+                "database (install the tzdata package)"
+            ) from None
+        raise ConfigError(
+            f"location.timezone: unknown time zone {name!r}; use a name such as 'Europe/Zurich'"
+        ) from None
 
 
 MAX_WEIGHT = 100.0  # keeps every weight well below the emergency bonus (ranking.py)

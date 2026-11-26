@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from zurich_air import __version__, schedule
 from zurich_air.app import FETCH_MARGIN_KM
@@ -77,12 +77,7 @@ def run_checks(
 
     timezone = check_timezone(config, now) if config else skipped("Time zone", NEEDS_CONFIG)
     results += [timezone, check_clock(now)]
-    if config is None:
-        results.append(skipped("Rendering", NEEDS_CONFIG))
-    elif timezone.status == "FAIL":
-        results.append(skipped("Rendering", "needs a valid time zone"))
-    else:
-        results.append(check_rendering(config, now))
+    results.append(check_rendering(config, now) if config else skipped("Rendering", NEEDS_CONFIG))
     results += check_display(config) if config else [skipped("Display", NEEDS_CONFIG)]
 
     if config is None:
@@ -129,17 +124,14 @@ def check_config(path: Path | None, cwd: Path | None = None) -> tuple[CheckResul
 
 
 def check_timezone(config: Config, now: datetime) -> CheckResult:
-    """``location.timezone`` names a zone the system knows."""
+    """The local time in ``location.timezone``.
+
+    Loading the config has already rejected a zone the system does not know, so the
+    Config check reports that.
+    """
     name = config.location.timezone
-    try:
-        zone = ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError, OSError):
-        hint = (
-            'set location.timezone to a zone such as "Europe/Zurich" '
-            "(list them: timedatectl list-timezones)"
-        )
-        return CheckResult("Time zone", "FAIL", f"unknown time zone {name!r}", hint)
-    return CheckResult("Time zone", "OK", f"{name}, local time {now.astimezone(zone):%H:%M %Z}")
+    local = now.astimezone(ZoneInfo(name))
+    return CheckResult("Time zone", "OK", f"{name}, local time {local:%H:%M %Z}")
 
 
 def check_clock(now: datetime) -> CheckResult:

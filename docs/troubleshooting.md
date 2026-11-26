@@ -377,7 +377,8 @@ put it in `~/zurich-air/.env` (see
 - **Off by whole hours:** the display shows the time in `location.timezone` from
   `config.toml` (default `Europe/Zurich`), not the Pi's system time zone. Check that
   setting, then `sudo systemctl restart zurich-air`. A misspelt time zone stops the
-  program with `ZoneInfoNotFoundError` in the log; use a name such as `Europe/Zurich`.
+  program at start with `location.timezone: unknown time zone '...'` in the log; use a
+  name such as `Europe/Zurich`.
 - **Off by minutes, or by days:** the system clock is not synchronised. Check `timedatectl`
   as in [the clock entry above](#the-display-does-not-change-at-all-and-the-log-mentions-the-system-clock).
 - **Up to 10 minutes behind at night:** expected during quiet hours; see the next entry.
@@ -426,11 +427,11 @@ service (see [Service](#service)). `display.output_dir` in `config.toml` is rela
 **Fix.** Read the reason in the log with `journalctl -u zurich-air -e`. Common ones:
 
 - **`zurich-air: error: ...` with `status=2/INVALIDARGUMENT`:** a problem in `config.toml`,
-  such as `unknown config key(s): update.intervall_s` or `invalid TOML in config.toml: ...`.
-  Correct the file; `zurich-air doctor` shows the same message.
+  such as `unknown config key(s): update.intervall_s`, `location.timezone: unknown time
+  zone 'Europe/Zurch'` or `invalid TOML in config.toml: ...`. Correct the file;
+  `zurich-air doctor` shows the same message.
 - **`display.backend = "waveshare" is not implemented until the panel arrives; use "mock"
   for now`:** set `backend = "mock"` in the `[display]` section.
-- **`ZoneInfoNotFoundError`:** `location.timezone` is misspelt.
 - **`status=203/EXEC`:** `~/zurich-air/.venv` is missing or broken; run the install script
   again.
 - **`status=216/GROUP`:** the `spi` or `gpio` group is missing, which happens only outside

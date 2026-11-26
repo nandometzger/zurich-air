@@ -90,13 +90,18 @@ def test_time_zone():
     assert result == CheckResult("Time zone", "OK", "Europe/Zurich, local time 13:00 CET")
 
 
-@pytest.mark.parametrize("name", ["Mars/Olympus_Mons", "", "../etc/passwd"])
-def test_unknown_time_zone_fails(name):
-    config = dataclasses.replace(CONFIG, location=LocationConfig(timezone=name))
+def test_time_zone_of_another_location():
+    config = dataclasses.replace(CONFIG, location=LocationConfig(timezone="America/New_York"))
     result = doctor.check_timezone(config, NOW)
-    assert result.status == "FAIL"
-    assert repr(name) in result.detail
-    assert "location.timezone" in result.hint
+    assert result == CheckResult("Time zone", "OK", "America/New_York, local time 07:00 EST")
+
+
+def test_unknown_time_zone_fails_the_config_check(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[location]\ntimezone = "Europe/Zurch"\n')
+    result, config = doctor.check_config(path)
+    assert (result.status, config) == ("FAIL", None)
+    assert result.detail.startswith("location.timezone: unknown time zone 'Europe/Zurch'; ")
 
 
 def test_clock_that_is_set():
@@ -477,12 +482,14 @@ def test_checks_that_need_a_valid_config_are_skipped(tmp_path, no_service, no_ne
     assert doctor.exit_status(results) == 1
 
 
-def test_rendering_is_skipped_without_a_valid_time_zone(tmp_path, no_service):
+def test_unknown_time_zone_skips_the_checks_that_need_it(tmp_path, no_service):
     path = write_config(tmp_path, '[location]\ntimezone = "Mars/Olympus_Mons"\n')
     results = doctor.run_checks(path, offline=True, now=NOW)
     statuses = {r.name: (r.status, r.detail) for r in results}
-    assert statuses["Time zone"][0] == "FAIL"
-    assert statuses["Rendering"] == ("SKIP", "needs a valid time zone")
+    assert statuses["Config"][0] == "FAIL"
+    assert "unknown time zone 'Mars/Olympus_Mons'" in statuses["Config"][1]
+    for name in ("Time zone", "Rendering"):
+        assert statuses[name] == ("SKIP", "needs a valid config")
 
 
 def test_command_prints_the_report(tmp_path, capsys, no_service, no_network):

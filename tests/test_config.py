@@ -1,8 +1,11 @@
+import json
 from pathlib import Path
+from zoneinfo import ZoneInfoNotFoundError
 
 import pytest
 
-from zurich_air.config import Config, ConfigError, load_config
+from zurich_air import config
+from zurich_air.config import Config, ConfigError, LocationConfig, load_config
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,6 +59,33 @@ def test_invalid_configs_rejected(tmp_path, toml):
     path.write_text(toml)
     with pytest.raises(ConfigError):
         load_config(path)
+
+
+def test_time_zone_override(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[location]\ntimezone = "America/New_York"\n')
+    assert load_config(path).location.timezone == "America/New_York"
+
+
+@pytest.mark.parametrize(
+    "name", ["Europe/Zurch", "Mars/Olympus_Mons", "Europe", "", "../etc/passwd", "/etc/localtime"]
+)
+def test_unknown_time_zone_rejected(tmp_path, name):
+    path = tmp_path / "config.toml"
+    path.write_text(f"[location]\ntimezone = {json.dumps(name)}\n")  # a TOML string, too
+    with pytest.raises(ConfigError) as exc:
+        load_config(path)
+    assert str(exc.value).startswith(f"location.timezone: unknown time zone {name!r}; ")
+
+
+def test_missing_time_zone_database_is_named(monkeypatch):
+    def not_found(key):
+        raise ZoneInfoNotFoundError(f"No time zone found with key {key}")
+
+    monkeypatch.setattr(config, "ZoneInfo", not_found)
+    monkeypatch.setattr(config, "available_timezones", set)  # neither system nor tzdata
+    with pytest.raises(ConfigError, match=r"no time zone database.*install the tzdata package"):
+        Config(location=LocationConfig(timezone="Europe/Zurich"))
 
 
 def test_missing_file_rejected(tmp_path):

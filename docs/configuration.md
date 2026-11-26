@@ -72,7 +72,7 @@ The radar centre and the place named in the header.
 | `name` | `"Zurich"` | Shown uppercased in the header: `ZURICH · LIVE AIR TRAFFIC`. The header does not shorten it, so keep it short. |
 | `latitude` | `47.3769` | Radar centre, degrees north (−90 to 90). |
 | `longitude` | `8.5417` | Radar centre, degrees east (−180 to 180). |
-| `timezone` | `"Europe/Zurich"` | An IANA time zone name. Used for the clock in the header, the time in `NO DATA SINCE`, and the quiet hours. |
+| `timezone` | `"Europe/Zurich"` | An IANA time zone name. Used for the clock in the header, the time in `NO DATA SINCE`, and the quiet hours. A name the system does not know is rejected when the file is loaded: `location.timezone: unknown time zone 'Europe/Zurch'`. |
 
 ### `[airport]`
 
