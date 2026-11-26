@@ -1,7 +1,7 @@
 """Deterministic synthetic traffic scenes for visual development and tests.
 
-Nothing here is ever used by the live data path — this module is imported only by the
-``preview`` command and the test suite.
+Nothing here is ever used by the live data path — this module is used only by the
+``preview`` and ``explain --scene`` commands and the test suite.
 
 The scenes are modelled on real Zürich operations on an afternoon with the usual westerly
 concept: arrivals on the ILS 14 from the north-west, departures off runways 16 and 28,

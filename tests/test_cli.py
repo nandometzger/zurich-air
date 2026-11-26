@@ -11,6 +11,7 @@ from PIL import Image
 from zurich_air import cli
 from zurich_air.cli import configure_logging, main, snapshot_scene
 from zurich_air.config import Config
+from zurich_air.data import synthetic
 from zurich_air.data.provider import ProviderError
 from zurich_air.data.readsb import parse_snapshot
 
@@ -240,4 +241,43 @@ def test_explain_rejects_bad_snapshot(tmp_path):
     bad.write_text("{not json")
     with pytest.raises(SystemExit) as exc:
         main(["explain", "--snapshot", str(bad)])
+    assert exc.value.code == 2
+
+
+class NoNetwork:
+    def fetch(self, lat, lon, radius_km):
+        raise AssertionError("explain --scene must not fetch live traffic")
+
+
+def test_explain_scene_ranks_synthetic_traffic_offline(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "build_provider", lambda config: NoNetwork())
+    assert main(["explain", "--scene", "typical"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("2026-12-24 15:42:00 · synthetic data · 17 aircraft")
+    header = next(line for line in lines if "REASONS" in line)
+    first = lines[lines.index(header) + 1]
+    assert first.split()[:3] == ["1", "UAE87", "A388"]
+    assert sum("not featured" in line for line in lines) == 1
+
+
+def test_explain_every_scene(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "build_provider", lambda config: NoNetwork())
+    assert main(["explain", "--scene", "all"]) == 0
+    out = capsys.readouterr().out
+    headings = [line for line in out.splitlines() if line.startswith("== ")]
+    assert headings == [f"== {name} ==" for name in synthetic.SCENE_NAMES]
+    assert out.count("· synthetic data ·") == len(synthetic.SCENE_NAMES)
+    assert "(no candidates)" in out  # the empty scene
+
+
+def test_explain_scene_and_snapshot_exclude_each_other(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["explain", "--scene", "typical", "--snapshot", str(FIXTURE)])
+    assert exc.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err
+
+
+def test_explain_rejects_unknown_scene():
+    with pytest.raises(SystemExit) as exc:
+        main(["explain", "--scene", "rush-hour"])
     assert exc.value.code == 2

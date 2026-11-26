@@ -154,22 +154,23 @@ reason that contributed points. A dashed line marks where the list ends.
 
 ```sh
 uv run zurich-air explain                                      # one live fetch
+uv run zurich-air explain --scene typical                      # synthetic, no network
 uv run zurich-air explain --snapshot snapshots/t*.json         # offline, oldest first
 uv run zurich-air explain --config config.toml --snapshot snapshots/t5.json
 ```
 
-With several snapshots, the earlier ones only carry the flight list forward, so that the
-`featured before` bonus shows up as it would in the live app. `explain` has no option for
-the synthetic scenes; the example in [How it works](how-it-works.md#an-example) was
-produced with the same function:
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--scene NAME` | | A synthetic scene instead of live traffic, the same as in [`preview`](#previews), or `all` for each in turn. The first line names the source `synthetic data`. |
+| `--snapshot FILE …` | | Saved readsb responses instead, oldest first. Cannot be combined with `--scene`. |
+| `--config FILE` | built-in | Configuration to rank with, e.g. to try other weights. |
 
-```sh
-uv run python -c "
-from zurich_air.cli import explain_ranking
-from zurich_air.config import Config
-from zurich_air.data import synthetic
-print(explain_ranking([synthetic.scene('typical').snapshot], Config()))"
-```
+Without `--scene` or `--snapshot`, live traffic is fetched once. With several snapshots,
+the earlier ones only carry the flight list forward, so that the `featured before` bonus
+shows up as it would in the live app. The example in
+[How it works](how-it-works.md#an-example) is `uv run zurich-air explain --scene typical`.
+The synthetic scenes are placed around the default location, so a config centred
+elsewhere has no candidates for them.
 
 ## Tests, lint and format
 

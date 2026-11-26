@@ -98,13 +98,19 @@ def main(argv: list[str] | None = None) -> int:
         help="show why aircraft are (not) featured: scores, phases and reasons",
     )
     _add_config_arg(explain)
-    explain.add_argument(
+    traffic = explain.add_mutually_exclusive_group()
+    traffic.add_argument(
+        "--scene",
+        choices=[*synthetic.SCENE_NAMES, "all"],
+        help="synthetic scene to explain instead, as rendered by preview (no network)",
+    )
+    traffic.add_argument(
         "--snapshot",
         type=Path,
         nargs="+",
         metavar="FILE",
         help="saved readsb JSON response(s), oldest first; the earlier ones only carry the "
-        "flight list forward. Without this, live traffic is fetched once",
+        "flight list forward. Without this or --scene, live traffic is fetched once",
     )
 
     check = commands.add_parser(
@@ -229,6 +235,9 @@ def _preview(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 def _explain(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     config = _load(args, parser)
+    if args.scene:
+        print(explain_scenes(args.scene, config))
+        return 0
     if args.snapshot:
         try:
             snapshots = read_snapshots(args.snapshot)
@@ -292,6 +301,20 @@ def explain_ranking(snapshots: list[TrafficSnapshot], config: Config) -> str:
     if not candidates:
         lines.append(f"{'':>3}  (no candidates)")
     return "\n".join(lines)
+
+
+def explain_scenes(name: str, config: Config) -> str:
+    """:func:`explain_ranking` for the synthetic traffic *name*, or for every scene ("all").
+
+    The header names the source as ``synthetic data``, as the footer of a preview does;
+    with every scene, a ``== name ==`` line heads each one.
+    """
+    if name != "all":
+        return explain_ranking([synthetic.scene(name).snapshot], config)
+    return "\n\n".join(
+        f"== {scene} ==\n" + explain_ranking([synthetic.scene(scene).snapshot], config)
+        for scene in synthetic.SCENE_NAMES
+    )
 
 
 def preview_scene(name: str, config: Config) -> Scene:

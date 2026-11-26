@@ -267,9 +267,9 @@ names them, because it only lists the featured callsigns. `explain` counts them 
 ### An example
 
 This is the report `zurich-air explain` produces, here for the synthetic `typical` scene:
-an invented afternoon at Zürich, not real traffic ([Development](development.md#explain-the-ranking)
-shows how to reproduce it). It is trimmed to the first ten rows; the dashed line marks
-where the flight list ends.
+an invented afternoon at Zürich, not real traffic, hence `synthetic data` in the first
+line. `uv run zurich-air explain --scene typical` reproduces it, without network. It is
+trimmed to the first ten rows; the dashed line marks where the flight list ends.
 
 ```text
 2026-12-24 15:42:00 · synthetic data · 17 aircraft on the radar, 0 withheld for privacy (LADD/PIA)
@@ -294,8 +294,9 @@ Row 1 adds up as follows: an arrival 11 km from the airport earns 40 × (1 − 0
 helicopter in row 4 has no phase, but helicopter and air rescue together lift it above
 the later arrivals.
 
-Run `zurich-air explain` to see the same table for live traffic or a saved snapshot, and
-see [Configuration](configuration.md#tune-the-ranking) for adjusting the weights.
+Run `zurich-air explain` to see the same table for live traffic, a saved snapshot or
+another synthetic scene ([Development](development.md#explain-the-ranking)), and see
+[Configuration](configuration.md#tune-the-ranking) for adjusting the weights.
 
 ## The radar
 

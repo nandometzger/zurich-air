@@ -345,6 +345,10 @@ not featured:
 cd ~/zurich-air && .venv/bin/zurich-air explain --config config.toml
 ```
 
+To see what the flight list holds on a busy afternoon instead, add `--scene busy`: it
+ranks invented Zürich traffic, marked `synthetic data` in the first line, and needs no
+network.
+
 ### The log shows "HTTP 429 rate limited"
 
 For example `adsb.fi: HTTP 429 rate limited; next try in 600 s`.

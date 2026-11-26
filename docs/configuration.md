@@ -310,6 +310,14 @@ shows up too:
 uv run zurich-air explain --config config.toml --snapshot snapshots/t1.json snapshots/t2.json
 ```
 
+Without snapshots or network, rank one of the synthetic scenes, the invented Zürich
+traffic the previews show; the report names its source `synthetic data`. It only has
+candidates while `[location]` is around Zürich:
+
+```sh
+uv run zurich-air explain --config config.toml --scene busy
+```
+
 Some starting points:
 
 ```toml
