@@ -435,8 +435,9 @@ different branch, or `--no-pull` to try local changes). Running it again is safe
 
 `zurich-air doctor` checks, one by one: the configuration file, the time zone, the system
 clock, font rendering (and how long a frame takes to draw), the display backend (in mock
-mode, that the output folder is writable), one test request to each configured data
-source, and the state of the service. It reports each check; if one fails, it says so and
+mode, that the output folder is writable), the airport in the bundled airport data, the
+route cache folder, one test request to each configured data source and to the weather
+service, and the state of the service. It reports each check; if one fails, it says so and
 exits with a non-zero status. Run it whenever something seems off:
 
 ```sh

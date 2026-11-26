@@ -21,8 +21,9 @@ Raspberry Pi Zero 2 W. These pages cover building one, running it, and changing 
 - [How it works](how-it-works.md): the path from transponder to pixel, how the five
   aircraft are chosen, how the radar and the 1-bit rendering work, and how it keeps running
   unattended.
-- [Data sources](data-sources.md): adsb.fi and adsb.lol, their terms and rate limits,
-  what is sent to them, privacy, and why routes are not shown.
+- [Data sources](data-sources.md): adsb.fi and adsb.lol for traffic, aviationweather.gov
+  for the weather, the VRS route table and OurAirports: their terms, rate limits, what is
+  sent to them, and privacy.
 
 ## Build on it
 
