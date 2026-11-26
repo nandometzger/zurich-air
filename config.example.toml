@@ -13,6 +13,7 @@ timezone = "Europe/Zurich"  # used for the clock on the display
 
 [airport]
 code = "ZRH"                # label drawn next to the runway glyph
+icao = "LSZH"               # its ICAO code: runways in use, weather station, route checks
 latitude = 47.458056
 longitude = 8.548056
 elevation_ft = 1416         # field elevation; slow reports just above it count as on the ground
@@ -22,6 +23,9 @@ runways = [
   [47.48310, 8.53473, 47.46130, 8.56446],  # 14/32
   [47.47560, 8.53595, 47.44540, 8.55673],  # 16/34
 ]
+# Infer the runways in use from the traffic and show them in the footer (LDG 14 · DEP 28).
+# Uses the runways of `icao` in the bundled OurAirports data, not the ones above.
+runways_in_use = true
 
 [radar]
 range_km = 60               # radius of the outer ring
@@ -80,3 +84,19 @@ featured_before = 15        # stickiness: a newcomer must beat an aircraft in th
 # variable ZURICH_AIR_ADSB_LOL_KEY, never from this file.
 sources = ["adsb_fi", "adsb_lol"]
 timeout_s = 10              # per request
+
+[weather]
+# The airport's current weather in the footer (270° 8 KT G18 · 4 °C · QNH 1018), from its
+# METAR at aviationweather.gov (US National Weather Service, no account needed).
+enabled = true
+station = ""                # ICAO code of the METAR station; "" uses airport.icao
+interval_s = 600            # seconds between requests (at least 60)
+max_age_s = 5400            # an observation older than this is not shown
+
+[routes]
+# Where a flight in the list comes from or goes to (DXB →, → JFK, LHR → IST), shown only
+# when the aircraft is seen flying that route. Route files of the airlines seen are
+# downloaded on demand from the VRS standing data on GitHub (CC0) and kept for a week;
+# only the airline code is sent.
+enabled = true
+cache_dir = "cache/routes"  # relative to the working directory; must be writable

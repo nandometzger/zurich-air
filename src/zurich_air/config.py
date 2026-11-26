@@ -7,6 +7,7 @@ working Zürich setup. Unknown keys are rejected to catch typos early.
 from __future__ import annotations
 
 import dataclasses
+import re
 import tomllib
 import typing
 from dataclasses import dataclass, field
@@ -28,6 +29,10 @@ ZRH_RUNWAYS: tuple[tuple[float, float, float, float], ...] = (
 # Traffic data sources that ``provider.sources`` may name (see data/provider.py).
 SOURCE_NAMES: tuple[str, ...] = ("adsb_fi", "adsb_lol")
 
+# An ICAO location indicator such as "LSZH" (in any case).
+ICAO_CODE = re.compile(r"[A-Za-z0-9]{4}")
+MIN_WEATHER_INTERVAL_S = 60.0  # METARs are issued every 30 minutes: no need to ask more often
+
 
 class ConfigError(ValueError):
     """Raised for invalid configuration files."""
@@ -44,10 +49,12 @@ class LocationConfig:
 @dataclass(frozen=True)
 class AirportConfig:
     code: str = "ZRH"
+    icao: str = "LSZH"  # bundled runways, default METAR station and route checks
     latitude: float = 47.458056
     longitude: float = 8.548056
     elevation_ft: int = 1416
     runways: tuple[tuple[float, float, float, float], ...] = ZRH_RUNWAYS
+    runways_in_use: bool = True  # infer them from the traffic (see processing/runways.py)
 
 
 @dataclass(frozen=True)
@@ -123,6 +130,24 @@ class ProviderConfig:
 
 
 @dataclass(frozen=True)
+class WeatherConfig:
+    """The airport's current weather from its METAR (see data/metar.py)."""
+
+    enabled: bool = True
+    station: str = ""  # ICAO code of the METAR station; "" = airport.icao
+    interval_s: float = 600.0  # seconds between requests
+    max_age_s: float = 5400.0  # older observations are not shown
+
+
+@dataclass(frozen=True)
+class RoutesConfig:
+    """Verified routes in the flight list (see data/routes.py and processing/route_check.py)."""
+
+    enabled: bool = True
+    cache_dir: str = "cache/routes"  # downloaded route files; relative to the working directory
+
+
+@dataclass(frozen=True)
 class Config:
     location: LocationConfig = field(default_factory=LocationConfig)
     airport: AirportConfig = field(default_factory=AirportConfig)
@@ -132,9 +157,16 @@ class Config:
     aircraft: AircraftConfig = field(default_factory=AircraftConfig)
     ranking: RankingConfig = field(default_factory=RankingConfig)
     provider: ProviderConfig = field(default_factory=ProviderConfig)
+    weather: WeatherConfig = field(default_factory=WeatherConfig)
+    routes: RoutesConfig = field(default_factory=RoutesConfig)
 
     def __post_init__(self) -> None:
         _validate(self)
+
+    @property
+    def weather_station(self) -> str:
+        """The METAR station, uppercase: ``weather.station``, else ``airport.icao``."""
+        return (self.weather.station.strip() or self.airport.icao).upper()
 
 
 def load_config(path: str | Path | None = None) -> Config:
@@ -225,7 +257,15 @@ def _validate(cfg: Config) -> None:
     for runway in cfg.airport.runways:
         if len(runway) != 4:
             raise ConfigError("airport.runways entries must be [lat1, lon1, lat2, lon2]")
+    if not ICAO_CODE.fullmatch(cfg.airport.icao):
+        raise ConfigError(
+            f"airport.icao must be a four-character ICAO code such as 'LSZH', "
+            f"got {cfg.airport.icao!r}"
+        )
     _validate_ranking(cfg.ranking)
+    _validate_weather(cfg.weather)
+    if not cfg.routes.cache_dir.strip():
+        raise ConfigError("routes.cache_dir must not be empty")
 
 
 def _validate_timezone(name: str) -> None:
@@ -244,6 +284,18 @@ def _validate_timezone(name: str) -> None:
         raise ConfigError(
             f"location.timezone: unknown time zone {name!r}; use a name such as 'Europe/Zurich'"
         ) from None
+
+
+def _validate_weather(weather: WeatherConfig) -> None:
+    if weather.station.strip() and not ICAO_CODE.fullmatch(weather.station.strip()):
+        raise ConfigError(
+            f"weather.station must be empty or a four-character ICAO code such as 'LSZH', "
+            f"got {weather.station!r}"
+        )
+    if weather.interval_s < MIN_WEATHER_INTERVAL_S:
+        raise ConfigError(f"weather.interval_s must be at least {MIN_WEATHER_INTERVAL_S:.0f} s")
+    if weather.max_age_s <= 0:
+        raise ConfigError("weather.max_age_s must be positive")
 
 
 MAX_WEIGHT = 100.0  # keeps every weight well below the emergency bonus (ranking.py)

@@ -181,3 +181,65 @@ def test_invalid_ranking_configs_rejected(tmp_path, toml):
     path.write_text(toml)
     with pytest.raises(ConfigError):
         load_config(path)
+
+
+def test_airport_weather_and_routes_defaults():
+    cfg = Config()
+    assert cfg.airport.icao == "LSZH"
+    assert cfg.airport.runways_in_use is True
+    assert cfg.weather.enabled and cfg.weather.station == ""
+    assert cfg.weather.interval_s == 600.0 and cfg.weather.max_age_s == 5400.0
+    assert cfg.routes.enabled and cfg.routes.cache_dir == "cache/routes"
+    assert not Path(cfg.routes.cache_dir).is_absolute()  # relative to the working directory
+
+
+def test_weather_station_defaults_to_the_airport(tmp_path):
+    assert Config().weather_station == "LSZH"
+    path = tmp_path / "config.toml"
+    path.write_text('[airport]\nicao = "lsgg"\n')
+    assert load_config(path).weather_station == "LSGG"
+    path.write_text('[airport]\nicao = "LSGG"\n\n[weather]\nstation = " lszh "\n')
+    assert load_config(path).weather_station == "LSZH"
+
+
+def test_weather_and_routes_can_be_turned_off(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        "[airport]\nrunways_in_use = false\n\n[weather]\nenabled = false\n\n"
+        "[routes]\nenabled = false\n"
+    )
+    cfg = load_config(path)
+    assert not cfg.airport.runways_in_use and not cfg.weather.enabled and not cfg.routes.enabled
+
+
+@pytest.mark.parametrize(
+    "toml",
+    [
+        '[airport]\nicao = "ZRH"\n',  # the IATA code
+        '[airport]\nicao = ""\n',
+        '[airport]\nicao = "LS ZH"\n',
+        "[airport]\nruntways_in_use = true\n",  # typo
+        '[airport]\nrunways_in_use = "yes"\n',
+        '[weather]\nstation = "Zurich"\n',
+        "[weather]\ninterval_s = 30\n",
+        "[weather]\nmax_age_s = 0\n",
+        "[weather]\nenabled = 1\n",
+        '[weather]\nurl = "https://example.com"\n',
+        '[routes]\ncache_dir = ""\n',
+        '[routes]\ncache_dir = " "\n',
+        "[routes]\ncache_dir = 5\n",
+        "[routes]\nttl_s = 60\n",
+    ],
+)
+def test_invalid_airport_weather_and_routes_configs_rejected(tmp_path, toml):
+    path = tmp_path / "config.toml"
+    path.write_text(toml)
+    with pytest.raises(ConfigError):
+        load_config(path)
+
+
+def test_invalid_icao_code_is_named(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[airport]\nicao = "ZRH"\n')
+    with pytest.raises(ConfigError, match=r"airport\.icao must be a four-character ICAO code"):
+        load_config(path)
