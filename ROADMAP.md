@@ -121,7 +121,7 @@ it agrees with what the aircraft is observed doing:
 Anything else shows no destination, as today.
 
 - **Measured** on live traffic around Zürich: the table knows a route for 82% of the
-  aircraft, and 45 of the 49 routes checked passed.
+  airline callsigns seen, and 45 of the 49 routes that could be checked passed.
 - **The remaining risk:** the far end of a route lies well beyond the 60 km the display
   sees and cannot be checked. A flight that keeps its callsign but no longer goes where the
   table says would still pass.
