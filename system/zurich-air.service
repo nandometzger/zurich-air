@@ -23,7 +23,8 @@ StartLimitBurst=5
 [Service]
 # The app reports READY=1 once it has started, then WATCHDOG=1 after every update and at
 # least once a minute while it waits for the next one (also during the 10-minute quiet
-# hours interval). An update takes a minute at most (two 10 s source timeouts, DNS, the
+# hours interval). An update takes a minute at most, even when every request times out
+# (two 10 s traffic sources, a 5 s METAR request and two 5 s route downloads, DNS, the
 # panel), so 5 minutes of silence means the process hangs: systemd kills and restarts it.
 Type=notify
 NotifyAccess=main
@@ -31,8 +32,9 @@ WatchdogSec=5min
 User=@USER@
 # On Raspberry Pi OS, /dev/spidev* belongs to group spi and /dev/gpiochip* to gpio.
 SupplementaryGroups=spi gpio
-# Must stay writable: config paths such as display.output_dir are relative to it, and
-# lgpio (gpiozero's default pin library) writes .lgd-nfy* notification files here.
+# Must stay writable: config paths such as display.output_dir and routes.cache_dir (the
+# downloaded route files, cache/routes) are relative to it, and lgpio (gpiozero's default
+# pin library) writes .lgd-nfy* notification files here.
 WorkingDirectory=@APP_DIR@
 ExecStart=@APP_DIR@/.venv/bin/zurich-air run --config @APP_DIR@/config.toml
 # Optional secrets such as ZURICH_AIR_ADSB_LOL_KEY (git-ignored; keep it chmod 600).
@@ -65,7 +67,8 @@ RestrictSUIDSGID=yes
 #   DeviceAllow=char-rtc and with it a device allow-list) would hide /dev/spidev* and
 #   /dev/gpiochip* from the service.
 #   ProtectHome= would make the application directory itself unreadable or read-only.
-#   ProtectSystem=strict would need ReadWritePaths= for the working directory.
+#   ProtectSystem=strict would need ReadWritePaths= for the working directory (the
+#   previews and the route cache live there).
 
 [Install]
 WantedBy=multi-user.target

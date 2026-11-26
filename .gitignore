@@ -26,6 +26,9 @@ previews/*
 # Saved provider responses (real data: keep them out of the repository)
 snapshots/
 
+# Downloaded route files (routes.cache_dir)
+cache/
+
 # Notification files lgpio (gpiozero's pin library) creates in the working directory
 .lgd-nfy*
 

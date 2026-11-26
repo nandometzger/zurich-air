@@ -11,6 +11,8 @@ import pytest
 
 from zurich_air import doctor
 from zurich_air.app import WATCHDOG_PING_S
+from zurich_air.config import Config
+from zurich_air.extras import MAX_EXTRA_S
 
 ROOT = Path(__file__).resolve().parents[1]
 UNIT = ROOT / "system" / "zurich-air.service"
@@ -74,6 +76,28 @@ def test_unit_uses_the_watchdog(unit):
     # The app pings at least every WATCHDOG_PING_S while sleeping and after every
     # update, which takes about a minute at worst: leave room for both, twice over.
     assert seconds(service["WatchdogSec"][0]) >= 2 * (WATCHDOG_PING_S + 60)
+    # Every request timing out: each traffic source, then the METAR and route downloads.
+    config = Config()
+    worst = len(config.provider.sources) * config.provider.timeout_s + MAX_EXTRA_S
+    assert worst <= config.update.interval_s - 20  # leaves time for DNS and the panel
+
+
+def test_unit_keeps_the_working_directory_writable(unit):
+    # The previews and the route cache live in the working directory, the app directory
+    # in the user's home: these settings would make it read-only.
+    service = unit["Service"]
+    assert service["WorkingDirectory"] == ["@APP_DIR@"]
+    for key in ("ProtectHome", "ReadOnlyPaths", "InaccessiblePaths", "TemporaryFileSystem"):
+        assert key not in service
+    assert service["ProtectSystem"] == ["full"]  # strict would need ReadWritePaths=
+    config = Config()
+    for path in (config.routes.cache_dir, config.display.output_dir):
+        assert not Path(path).is_absolute()  # relative to the working directory
+
+
+def test_downloaded_routes_are_not_committed():
+    ignored = (ROOT / ".gitignore").read_text().splitlines()
+    assert Path(Config().routes.cache_dir).parts[0] + "/" in ignored
 
 
 def test_unit_restarts_without_spinning(unit):
