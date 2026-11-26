@@ -1,4 +1,9 @@
-"""Compose the full 1-bit screen: header, radar, flight list and footer."""
+"""Compose the full 1-bit screen: header, radar, flight list and footer.
+
+The footer holds the airport line on the left (``LDG 14 · DEP 28 · 270° 8 KT G18 · 4 °C ·
+QNH 1018``), shortened from its end when it does not fit, and the data source, or since
+when no data has arrived, on the right.
+"""
 
 from __future__ import annotations
 
@@ -17,8 +22,8 @@ from zurich_air.processing.route_check import VerifiedRoute
 from zurich_air.processing.runways import RunwayUse
 from zurich_air.rendering import formatting
 from zurich_air.rendering.flight_list import draw_flight_list
-from zurich_air.rendering.fonts import cap_height, draw_text, font
-from zurich_air.rendering.layout import SMALL, TITLE, TRACKING, Layout
+from zurich_air.rendering.fonts import Face, cap_height, draw_text, fit_parts, font
+from zurich_air.rendering.layout import FOOTER_GAP, SMALL, TITLE, TRACKING, Layout
 from zurich_air.rendering.radar import draw_radar
 from zurich_air.rendering.symbols import BLACK, WHITE, draw_dot
 
@@ -51,15 +56,20 @@ class Renderer:
         """Draw *scene* onto a new black-and-white image of the display's size."""
         image = Image.new("1", (self.layout.width, self.layout.height), WHITE)
         draw = ImageDraw.Draw(image)
+        waiting = scene.status == "waiting"
         self._draw_header(draw, scene)
-        draw_radar(image, self.layout, self.config, scene.aircraft, scene.featured, scene.trails)
+        draw_radar(
+            image, self.layout, self.config, scene.aircraft, scene.featured, scene.trails,
+            count=None if waiting else len(scene.aircraft),  # without data it would be a guess
+        )  # fmt: skip
         draw_flight_list(
             image,
             self.layout.flight_list,
             scene.featured,
             self.config,
             scene.phases,
-            waiting=scene.status == "waiting",
+            routes=scene.routes,
+            waiting=waiting,
         )
         self._draw_footer(draw, scene)
         return image
@@ -87,20 +97,28 @@ class Renderer:
         lay = self.layout
         right = lay.width - lay.margin
         draw.line((lay.margin, lay.footer_rule_y, right - 1, lay.footer_rule_y), fill=BLACK)
+        status = self._footer_status(scene)
+        if status is not None:
+            text, fnt = status
+            width = draw_text(
+                draw, right, lay.footer_baseline, text, fnt, tracking=TRACKING, align="right"
+            )
+            right -= width + FOOTER_GAP
         regular = font(SMALL)
-        summary = formatting.distance(self.config.radar.range_km)
-        if scene.status != "waiting":  # without data, the count would be a guess
-            summary = f"{len(scene.aircraft)} AIRCRAFT{formatting.SEPARATOR}{summary}"
-        draw_text(draw, lay.margin, lay.footer_baseline, summary, regular, tracking=TRACKING)
+        parts = formatting.airport_parts(scene.weather, scene.runways)
+        line = fit_parts(parts, regular, right - lay.margin, TRACKING, formatting.SEPARATOR)
+        if line:
+            draw_text(draw, lay.margin, lay.footer_baseline, line, regular, tracking=TRACKING)
 
+    def _footer_status(self, scene: Scene) -> tuple[str, Face] | None:
+        """The data source, or since when no data has arrived, and its face."""
         if scene.status != "live":
-            text, fnt = "NO DATA", font(SMALL, bold=True)
+            text = "NO DATA"
             if scene.updated_at is not None:
                 text += (
                     f" SINCE {formatting.clock(scene.updated_at, self.config.location.timezone)}"
                 )
-        elif scene.source_label:
-            text, fnt = scene.source_label.upper(), regular
-        else:
-            return
-        draw_text(draw, right, lay.footer_baseline, text, fnt, tracking=TRACKING, align="right")
+            return text, font(SMALL, bold=True)
+        if scene.source_label:
+            return scene.source_label.upper(), font(SMALL)
+        return None

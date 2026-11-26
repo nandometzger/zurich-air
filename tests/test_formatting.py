@@ -3,8 +3,11 @@ from datetime import UTC, datetime
 import pytest
 
 from zurich_air.data.aircraft import Aircraft
+from zurich_air.data.metar import Weather
+from zurich_air.processing.route_check import VerifiedRoute
+from zurich_air.processing.runways import RunwayUse
 from zurich_air.rendering import formatting
-from zurich_air.rendering.fonts import ELLIPSIS, font, text_width, truncate
+from zurich_air.rendering.fonts import ELLIPSIS, fit_parts, font, text_width, truncate
 
 
 @pytest.mark.parametrize(
@@ -101,3 +104,112 @@ def test_tracked_text_is_wider():
     face = font(10)
     assert text_width("AIRCRAFT", face, tracking=1) > text_width("AIRCRAFT", face)
     assert text_width("", face) == 0
+
+
+# --- the airport line ---------------------------------------------------------------------
+
+MINUS = formatting.MINUS  # U+2212
+
+
+def weather(direction=270, speed=8, gust=None, temp=4, qnh=1018, variable=False) -> Weather:
+    observed = datetime(2026, 12, 24, 14, 20, tzinfo=UTC)
+    return Weather("LSZH", observed, direction, variable, speed, gust, temp, None, qnh, "")
+
+
+@pytest.mark.parametrize(
+    ("report", "expected"),
+    [
+        (weather(270, 8, 18), "270° 8 KT G18"),
+        (weather(270, 8), "270° 8 KT"),
+        (weather(10, 5), "010° 5 KT"),  # three digits, as in the METAR
+        (weather(360, 12), "360° 12 KT"),
+        (weather(None, 12, variable=True), "VRB 12 KT"),
+        (weather(None, 12, 25, variable=True), "VRB 12 KT G25"),
+        (weather(None, 0), "CALM"),
+        (weather(None, 7), "7 KT"),  # direction not reported: never guessed
+        (None, None),
+    ],
+)
+def test_wind(report, expected):
+    assert formatting.wind(report) == expected
+
+
+@pytest.mark.parametrize(
+    ("degrees", "expected"),
+    [(4, "4 °C"), (0, "0 °C"), (-3, f"{MINUS}3 °C"), (-12, f"{MINUS}12 °C"), (31, "31 °C")],
+)
+def test_temperature_uses_a_real_minus_sign(degrees, expected):
+    assert formatting.temperature(weather(temp=degrees)) == expected
+
+
+def test_minus_is_the_minus_sign_not_a_hyphen():
+    assert formatting.MINUS == "\N{MINUS SIGN}"
+
+
+def test_missing_temperature_and_qnh():
+    assert formatting.temperature(weather(temp=None)) is None
+    assert formatting.temperature(None) is None
+    assert formatting.qnh(weather(qnh=None)) is None
+    assert formatting.qnh(None) is None
+    assert formatting.qnh(weather(qnh=998)) == "QNH 998"
+
+
+@pytest.mark.parametrize(
+    ("use", "expected"),
+    [
+        (RunwayUse(("14",), ("28",)), ["LDG 14", "DEP 28"]),
+        (RunwayUse(("14", "16"), ("28", "32")), ["LDG 14 16", "DEP 28 32"]),
+        (RunwayUse(("34",), ()), ["LDG 34"]),
+        (RunwayUse((), ("16",)), ["DEP 16"]),
+        (RunwayUse(), []),
+        (None, []),
+    ],
+)
+def test_runways(use, expected):
+    assert formatting.runways(use) == expected
+
+
+def test_airport_parts_in_order_of_importance():
+    parts = formatting.airport_parts(weather(270, 8, 18), RunwayUse(("14",), ("28",)))
+    assert parts == ["LDG 14", "DEP 28", "270° 8 KT G18", "4 °C", "QNH 1018"]
+    assert formatting.airport_parts(weather(temp=None), None) == ["270° 8 KT", "QNH 1018"]
+    assert formatting.airport_parts(None, RunwayUse((), ("28",))) == ["DEP 28"]
+    assert formatting.airport_parts(None, None) == []
+
+
+def test_fit_parts_drops_the_least_important_first():
+    small = font(10)
+    parts = ["LDG 14 16", "DEP 28 32", "VRB 12 KT G25", f"{MINUS}12 °C", "QNH 1033"]
+    full = " · ".join(parts)
+    width = text_width(full, small, 1)
+    assert fit_parts(parts, small, width, 1) == full
+    assert fit_parts(parts, small, width - 1, 1) == " · ".join(parts[:4])
+    no_temperature = text_width(" · ".join(parts[:3]), small, 1)
+    assert fit_parts(parts, small, no_temperature, 1) == " · ".join(parts[:3])
+    assert fit_parts(parts, small, text_width("LDG 14 16", small, 1), 1) == "LDG 14 16"
+    assert fit_parts(parts, small, 10, 1) == ""  # not even the runways: nothing at all
+    assert fit_parts([], small, 400) == ""
+    assert fit_parts(["", "CALM", ""], small, 400) == "CALM"
+
+
+# --- routes -------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("route", "expected"),
+    [
+        (VerifiedRoute("OMDB", "LSZH", "arrival"), "DXB →"),
+        (VerifiedRoute("LSZH", "KJFK", "departure"), "→ JFK"),
+        (VerifiedRoute("EGLL", "LTFM", "overflight"), "LHR → IST"),
+        (VerifiedRoute("LSZH", "DGAH", "departure"), "→ DGAH"),  # no IATA code: ICAO
+        (VerifiedRoute("ZZZZ", "LSZH", "arrival"), "ZZZZ →"),  # not bundled: as given
+    ],
+)
+def test_route_label(route, expected):
+    assert formatting.route_label(route) == expected
+
+
+def test_airport_code_prefers_iata():
+    assert formatting.airport_code("LSZH") == "ZRH"
+    assert formatting.airport_code("lsgg") == "GVA"
+    assert formatting.airport_code("DGAH") == "DGAH"

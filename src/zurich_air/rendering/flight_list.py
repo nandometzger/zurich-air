@@ -1,12 +1,14 @@
 """The flight list: one two-line row per featured aircraft, numbered like the radar.
 
     ▮1 SWR8           ▲ 5400 FT
-       Swiss · 777            DEP
+       Swiss · 777          → JFK
 
-The right end of the second line says where the aircraft is going: ``ARR`` or ``DEP`` for
-an arrival or departure, otherwise an arrow along its track. The description gives way by
-meaning (``Swiss · 777-300ER`` → ``Swiss · 777`` → ``777-300ER`` → ``777``), never with an
-ellipsis. Missing fields are left out; nothing is guessed.
+The right end of the second line says where the aircraft is going: its verified route
+(``DXB →`` arriving from Dubai, ``→ JFK`` departing for New York, ``LHR → IST`` passing
+over), else ``ARR`` or ``DEP`` for an arrival or departure, otherwise an arrow along its
+track. The description gives way by meaning (``Swiss · 777-300ER`` → ``Swiss · 777`` →
+``777-300ER`` → ``777``), never with an ellipsis. Missing fields are left out; nothing is
+guessed, and a route is only shown once the aircraft is seen flying it.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from PIL import Image, ImageDraw
 from zurich_air.config import Config
 from zurich_air.data.aircraft import Aircraft
 from zurich_air.processing.phase import Phase
+from zurich_air.processing.route_check import VerifiedRoute
 from zurich_air.rendering import formatting
 from zurich_air.rendering.fonts import cap_height, draw_text, font, text_width, truncate
 from zurich_air.rendering.layout import (
@@ -47,9 +50,13 @@ def draw_flight_list(
     config: Config,
     phases: Mapping[str, Phase] | None = None,
     *,
+    routes: Mapping[str, VerifiedRoute] | None = None,
     waiting: bool = False,
 ) -> None:
-    """The rows; with *waiting* (no usable data) a calm note instead."""
+    """The rows; with *waiting* (no usable data) a calm note instead.
+
+    *phases* and *routes* are by ICAO address.
+    """
     draw = ImageDraw.Draw(image)
     if waiting:
         _draw_note(draw, box, "WAITING FOR DATA")
@@ -58,7 +65,7 @@ def draw_flight_list(
         within = f"within {formatting.distance(config.radar.range_km).lower()}"
         _draw_note(draw, box, "NO AIRCRAFT", within)
         return
-    phases = phases or {}
+    phases, routes = phases or {}, routes or {}
     cap = cap_height(font(CALLSIGN, bold=True))
     top = box.top + RADAR_GAP  # first cap line level with the top of the radar ring
     bottom = box.bottom - RADAR_GAP
@@ -67,8 +74,8 @@ def draw_flight_list(
         pitch = min(MAX_ROW_PITCH, (bottom - top - cap - LINE_GAP) // (len(featured) - 1))
     for i, aircraft in enumerate(featured):
         baseline = top + cap + i * pitch
-        phase = phases.get(aircraft.icao)
-        _draw_row(image, draw, box, baseline, i + 1, aircraft, phase, config)
+        where = routes.get(aircraft.icao) or phases.get(aircraft.icao)
+        _draw_row(image, draw, box, baseline, i + 1, aircraft, where, config)
 
 
 def _draw_row(
@@ -78,9 +85,10 @@ def _draw_row(
     baseline: int,
     number: int,
     aircraft: Aircraft,
-    phase: Phase | None,
+    where: VerifiedRoute | Phase | None,
     config: Config,
 ) -> None:
+    """One row; *where* is the aircraft's verified route, else its phase, if known."""
     callsign_face = font(CALLSIGN, bold=True)
     small = font(SMALL)
     cap = cap_height(callsign_face)
@@ -107,8 +115,12 @@ def _draw_row(
     # Line 2: operator and model; where it is going flush right.
     baseline += LINE_GAP
     right = box.right
-    if phase is not None:
-        tag = PHASE_LABELS[phase]
+    if isinstance(where, VerifiedRoute):
+        label = formatting.route_label(where)
+        right -= draw_text(draw, right, baseline, label, small, tracking=TRACKING, align="right")
+        right -= MIN_SPACE  # the arrow already sets it apart from the model name
+    elif where is not None:
+        tag = PHASE_LABELS[where]
         right -= draw_text(draw, right, baseline, tag, small, tracking=TRACKING, align="right")
         right -= LABEL_SPACE
     elif aircraft.track_deg is not None:

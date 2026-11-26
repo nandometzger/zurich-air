@@ -1,8 +1,11 @@
 """The radar scope: range rings, compass, airport, trails and aircraft (north up).
 
+The range is set into the bottom of the outer ring, mirroring the "N" at the top, and the
+number of aircraft on the scope stands in its top-left corner.
+
 Featured aircraft carry a numbered badge joined to their marker by a short leader line, as
 on an ATC radar data block, so that every number points at exactly one aircraft even in the
-cluster around the airport (see :func:`_place_badge`).
+cluster around the airport (see :func:`_place_badge`). Badges keep clear of every label.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from zurich_air.config import Config
 from zurich_air.data.aircraft import Aircraft
 from zurich_air.data.reference import is_helicopter
 from zurich_air.processing.geo import RadarProjection
+from zurich_air.rendering import formatting
 from zurich_air.rendering.fonts import cap_height, draw_text, font, text_width
 from zurich_air.rendering.layout import (
     AIRPORT_GLYPH_RADIUS,
@@ -97,7 +101,9 @@ class RadarPlot:
 
     markers: dict[str, Marker]  # by ICAO address
     badges: list[Badge]
-    landmarks: list[Rect]  # "N", centre cross, airport code (and a runway-less airport)
+    # "N", range, centre cross, aircraft count (if shown), a runway-less airport and the
+    # airport code (if placed, always last)
+    landmarks: list[Rect]
     airport: AirportGlyph
 
 
@@ -108,7 +114,11 @@ def draw_radar(
     aircraft: Sequence[Aircraft],
     featured: Sequence[Aircraft],
     trails: Mapping[str, Sequence[tuple[float, float]]],
+    *,
+    count: int | None = None,
 ) -> RadarPlot:
+    """Draw the scope and its traffic onto *image*; *count* is the number of aircraft to
+    state in the corner (None: say nothing, as without data)."""
     projection = RadarProjection(
         origin_lat=config.location.latitude,
         origin_lon=config.location.longitude,
@@ -120,7 +130,13 @@ def draw_radar(
     draw = ImageDraw.Draw(image)
     _draw_rings(draw, layout, config)
     airport = _draw_airport(draw, projection, config)
-    landmarks = [*_draw_compass(draw, layout), _draw_centre(draw, layout)]
+    landmarks = [
+        *_draw_compass(draw, layout),
+        _draw_range(draw, layout, formatting.distance(config.radar.range_km)),
+        _draw_centre(draw, layout),
+    ]
+    if count is not None:
+        landmarks.append(_draw_count(draw, layout, count))
 
     # Traffic goes onto a copy that is pasted back through a disc, clipping it to the scope.
     traffic = image.copy()
@@ -181,6 +197,29 @@ def _draw_compass(draw: ImageDraw.ImageDraw, layout: Layout) -> list[Rect]:
     draw.rectangle(rect, fill=WHITE)
     draw_text(draw, left, baseline, "N", fnt)
     return [rect]
+
+
+def _draw_range(draw: ImageDraw.ImageDraw, layout: Layout, text: str) -> Rect:
+    """The range (``60 KM``) set into the bottom of the outer ring, like the "N" at the top."""
+    fnt = font(SMALL)
+    cap, width = cap_height(fnt), text_width(text, fnt, TRACKING)
+    left = layout.radar_cx - width // 2
+    baseline = layout.radar_cy + layout.radar_radius + (cap + 1) // 2
+    rect = (left - 3, baseline - cap - 1, left + width + 2, baseline + 1)
+    draw.rectangle(rect, fill=WHITE)
+    draw_text(draw, left, baseline, text, fnt, tracking=TRACKING)
+    return rect
+
+
+def _draw_count(draw: ImageDraw.ImageDraw, layout: Layout, count: int) -> Rect:
+    """``17 AIRCRAFT`` in the top-left corner of the scope's square, outside the ring."""
+    fnt = font(TINY)
+    text = f"{count} AIRCRAFT"
+    cap, width = cap_height(fnt), text_width(text, fnt, TRACKING)
+    left = layout.radar_cx - layout.radar_radius
+    baseline = layout.radar_cy - layout.radar_radius + cap
+    draw_text(draw, left, baseline, text, fnt, tracking=TRACKING)
+    return left, baseline - cap - 1, left + width, baseline + 1
 
 
 def _draw_centre(draw: ImageDraw.ImageDraw, layout: Layout) -> Rect:

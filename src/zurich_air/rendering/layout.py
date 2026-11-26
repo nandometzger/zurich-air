@@ -4,11 +4,14 @@ At 400 x 300 px::
 
     12 ┌ ZURICH · LIVE AIR TRAFFIC ───────────────── ● 15:42 ┐   header, baseline y=22
     30 ├──────────────────────────────────────────────────────┤   hairline
-       │   ╭──── radar ────╮      ▮1 UAE87        ▼ 2800 FT   │
-       │   │   r = 112 px  │         Emirates · A380      ARR │   flight list
-       │   ╰───────────────╯      ...                         │
+       │ 17 AIRCRAFT ──N──╮       ▮1 UAE87        ▼ 2800 FT   │   count in the corner
+       │   │   r = 112 px  │         Emirates · A380    DXB → │   flight list
+       │   ╰──── 60 KM ────╯      ...                         │   range set into the ring
    272 ├──────────────────────────────────────────────────────┤   hairline
-   288 └ 17 AIRCRAFT · 60 KM ───────────────── SYNTHETIC DATA ┘   footer baseline
+   288 └ LDG 14 · DEP 28 · 270° 8 KT G18 ───── SYNTHETIC DATA ┘   footer baseline
+
+The footer's left half is the airport line (runways in use, wind, temperature, QNH),
+its right half the data source, or since when no data has arrived.
 """
 
 from __future__ import annotations
@@ -52,8 +55,11 @@ MAX_ROW_PITCH = 49
 TEXT_INDENT = BADGE_W + 6
 TREND_SIZE = 4  # rows of the climb/descend triangle
 SYMBOL_GAP = 3  # between a symbol and its text
-MIN_SPACE = 8  # between the left and right parts of a line
+MIN_SPACE = 8  # between the left and right parts of a line; also before a route
 LABEL_SPACE = 12  # before ARR / DEP, which would otherwise read as part of the model name
+
+# Footer.
+FOOTER_GAP = 16  # at least between the airport line and the data source
 
 
 @dataclass(frozen=True)

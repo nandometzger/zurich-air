@@ -14,6 +14,7 @@ line up exactly across rows regardless of each glyph's side bearings.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cache, lru_cache
 from pathlib import Path
@@ -110,6 +111,24 @@ def truncate(text: str, face: Face, max_width: int, tracking: int = 0) -> str:
         candidate = text[:end].rstrip(" ·-") + ELLIPSIS
         if text_width(candidate, face, tracking) <= max_width:
             return candidate
+    return ""
+
+
+def fit_parts(
+    parts: Sequence[str],
+    face: Face,
+    max_width: int,
+    tracking: int = 0,
+    separator: str = f" {MIDDLE_DOT} ",
+) -> str:
+    """*parts* (most important first) joined by *separator*, leaving out parts from the end
+    until the text fits into *max_width* pixels; empty if not even the first one fits."""
+    kept = [part for part in parts if part]
+    while kept:
+        text = separator.join(kept)
+        if text_width(text, face, tracking) <= max_width:
+            return text
+        kept.pop()
     return ""
 
 

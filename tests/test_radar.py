@@ -22,7 +22,10 @@ AIRPORT = (CONFIG.airport.latitude, CONFIG.airport.longitude)
 
 def plot(scene: Scene) -> RadarPlot:
     image = Image.new("1", (LAYOUT.width, LAYOUT.height), 255)
-    return draw_radar(image, LAYOUT, CONFIG, scene.aircraft, scene.featured, scene.trails)
+    return draw_radar(
+        image, LAYOUT, CONFIG, scene.aircraft, scene.featured, scene.trails,
+        count=len(scene.aircraft),
+    )  # fmt: skip
 
 
 def near_airport(icao, bearing, dist_km, track, **kwargs):
@@ -54,8 +57,29 @@ def cluster_scene() -> Scene:
     return scene_of(featured, others)
 
 
+def rim_scene() -> Scene:
+    """Traffic along the edge of the scope, right beside the range and the count."""
+    centre = (CONFIG.location.latitude, CONFIG.location.longitude)
+
+    def at(icao, bearing, dist_km, track):
+        lat, lon = destination(*centre, bearing, dist_km)
+        return Aircraft(icao, lat, lon, track_deg=track, callsign=f"R{icao}")
+
+    featured = [
+        at("r1", 180, 56, 90),  # just above the range label
+        at("r2", 172, 57, 270),
+        at("r3", 188, 54, 0),
+        at("r4", 315, 57, 45),  # near the count in the top-left corner
+        at("r5", 300, 56, 120),
+        at("r6", 330, 55, 200),
+    ]
+    others = [at("s1", 176, 58, 180), at("s2", 184, 58, 180), at("s3", 320, 58, 140)]
+    return scene_of(featured, others)
+
+
 SCENES = {name: lambda name=name: preview_scene(name, CONFIG) for name in synthetic.SCENE_NAMES}
 SCENES["cluster"] = cluster_scene
+SCENES["rim"] = rim_scene
 
 
 def pixels(rect):
@@ -139,3 +163,31 @@ def test_pile_up_still_gets_every_badge_inside_the_scope():
     for badge in placed.badges:
         others = [pixels(b.box) for b in placed.badges if b is not badge]
         assert not pixels(badge.box) & set().union(*others)
+
+
+def test_range_and_count_are_landmarks():
+    scene = rim_scene()
+    placed = plot(scene)
+    north, distance, _, count = placed.landmarks[:4]
+    cx, cy, r = LAYOUT.radar_cx, LAYOUT.radar_cy, LAYOUT.radar_radius
+    assert distance[1] < cy + r < distance[3]  # set into the bottom of the ring, like the N
+    assert north[1] < cy - r < north[3]
+    assert (count[0], count[1]) == (cx - r, cy - r - 1)  # the scope's top-left corner
+    for x in (count[0], count[2]):
+        for y in (count[1], count[3]):
+            assert math.hypot(x - cx, y - cy) > r + 2, "the count stays off the ring"
+    without = draw_radar(
+        Image.new("1", (LAYOUT.width, LAYOUT.height), 255), LAYOUT, CONFIG,
+        scene.aircraft, scene.featured, scene.trails,
+    )  # fmt: skip
+    assert count not in without.landmarks  # no count, no landmark (and no label)
+
+
+def test_badges_keep_clear_of_the_range_and_the_count():
+    placed = plot(rim_scene())
+    assert len(placed.badges) == 6
+    _, distance, _, count = placed.landmarks[:4]
+    for badge in placed.badges:
+        for label in (distance, count):
+            assert not pixels(badge.box) & pixels(label), badge
+            assert not set(badge.leader) & pixels(label), badge
