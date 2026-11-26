@@ -1,23 +1,20 @@
 # Contributing
 
-Thanks for your interest! Zurich Air is a small hobby project, so the process is light.
+Thanks for your interest! Zurich Air is a small hobby project, so the process is light:
+open an issue to discuss an idea or report a problem, or send a pull request.
 
-## Setup
+## Getting started
 
 ```sh
 uv sync
 uv run pytest
 uv run ruff check && uv run ruff format --check
+uv run zurich-air preview      # synthetic scenes → previews/, no hardware or network
 ```
 
-Generate preview images from synthetic data (no hardware or network needed):
-
-```sh
-uv run zurich-air preview
-open previews/        # macOS
-```
-
-To set up a Raspberry Pi, follow [docs/raspberry-pi.md](docs/raspberry-pi.md).
+[docs/development.md](docs/development.md) covers the rest: the project layout, previews,
+replaying real traffic, `zurich-air explain`, the tests and CI. To set up a Raspberry Pi,
+follow [docs/raspberry-pi.md](docs/raspberry-pi.md).
 
 ## Guidelines
 
@@ -26,11 +23,14 @@ To set up a Raspberry Pi, follow [docs/raspberry-pi.md](docs/raspberry-pi.md).
 - Never fabricate data in the live path (no guessed destinations or aircraft types).
 - Add tests for logic changes (geometry, parsing, filtering, ranking).
 - Run `uv run ruff format` before committing.
-- For visual changes, include before/after previews in the pull request.
+- For visual changes, include before/after previews in the pull request, and regenerate
+  the documentation images (`uv run python scripts/render-docs-images.py`).
 - Deployment files (`scripts/`, `system/`) are checked by `tests/test_deploy_files.py`;
   install [ShellCheck](https://www.shellcheck.net) to have it run on the scripts too.
 
 ## Reporting issues
 
-Please include your config (without secrets), the log output (`journalctl -u zurich-air` on the
-Pi) and, for display issues, a photo or preview image. Never include Wi-Fi names or passwords.
+Please include your config (without secrets), the output of `zurich-air doctor`, the log
+output (`journalctl -u zurich-air` on the Pi) and, for display issues, a photo or preview
+image. [docs/troubleshooting.md](docs/troubleshooting.md) may already have the answer.
+Never include Wi-Fi names or passwords, or API keys.
