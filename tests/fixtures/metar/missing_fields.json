@@ -1,0 +1,1 @@
+[{"icaoId": "LSZH", "receiptTime": "2026-11-26T10:20:00.000Z", "reportTime": "2026-11-26T10:20:00.000Z", "temp": "warm", "dewp": null, "wspd": 3, "visib": "6+", "qcField": 0, "metarType": "METAR", "rawOb": "METAR LSZH 261020Z AUTO ///03KT 9999 NCD ///// Q////", "lat": 47.48, "lon": 8.536, "elev": 424, "name": "Zürich Intl Arpt, ZH, CH", "cover": "BKN", "fltCat": "VFR"}]
