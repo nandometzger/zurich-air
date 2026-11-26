@@ -5,7 +5,8 @@
 # Run it on the Pi as the user the service should run as (not as root); it calls sudo
 # where it has to. Every step checks what is already in place, so running it again is
 # safe, and it is also how you update: it pulls the branch, re-syncs the dependencies,
-# refreshes the systemd unit and restarts the service.
+# refreshes the systemd unit and restarts the service. It ends with `zurich-air doctor`,
+# whose findings are reported but never fail the install, and a list of next steps.
 #
 # It never reads or prints secrets: Wi-Fi is NetworkManager's business, and the optional
 # API key lives in the git-ignored .env file, which this script does not touch.
@@ -275,16 +276,32 @@ install_service() {
   fi
 }
 
+run_doctor() {
+  log "Checking the setup with zurich-air doctor"
+  # From the app directory and with the service's config, so that relative paths in it
+  # resolve as they do for the service. A problem is reported; the install is done anyway.
+  if (cd "$APP_DIR" && .venv/bin/zurich-air doctor --config "$APP_DIR/config.toml"); then
+    log "Setup check passed"
+  else
+    warn "the setup check found a problem: see the FAIL lines and their fixes above"
+  fi
+}
+
 next_steps() {
   cat <<EOF
 
 Zurich Air is installed in $APP_DIR and runs as the $SERVICE service.
 
-  Follow the log:   journalctl -u $SERVICE -f
-  Service status:   systemctl status $SERVICE
+Next steps:
   Settings:         nano $APP_DIR/config.toml
                     then: sudo systemctl restart $SERVICE
-  Mock display:     $APP_DIR/previews/latest.png (newest frame)
+  Recent log:       journalctl -u $SERVICE -e
+  Follow the log:   journalctl -u $SERVICE -f
+  Service status:   systemctl status $SERVICE
+  Check the setup:  cd $APP_DIR && .venv/bin/zurich-air doctor --config config.toml
+  Latest preview:   $APP_DIR/previews/latest.png (mock display, newest frame);
+                    to view it on your computer, run there:
+                    scp $USER_NAME@${HOSTNAME%%.*}.local:$APP_DIR/previews/latest.png .
   Update later:     $APP_DIR/scripts/install-pi.sh
 EOF
   if [[ ! -e /dev/spidev0.0 ]]; then
@@ -306,6 +323,7 @@ main() {
   setup_venv
   create_config
   install_service
+  run_doctor
   next_steps
 }
 

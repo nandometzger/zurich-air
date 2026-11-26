@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from zurich_air import doctor
 from zurich_air.app import WATCHDOG_PING_S
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,6 +132,27 @@ def test_installer_keeps_the_deployment_decisions():
     assert "--system-site-packages" in script  # apt's spidev/lgpio/gpiozero stay importable
     assert "sync --locked --no-dev" in script
     assert "id -un" in script  # the service user is whoever runs it, never a fixed name
+
+
+def installer_steps() -> list[str]:
+    """The commands main() runs, in order."""
+    main = re.search(r"^main\(\) \{\n(.*?)^\}", INSTALLER.read_text(), re.MULTILINE | re.DOTALL)
+    assert main, "install-pi.sh has no main() function"
+    return re.findall(r"^  ([a-z_]+)\b", main[1], re.MULTILINE)
+
+
+def test_installer_checks_the_setup_once_the_service_runs():
+    steps = installer_steps()
+    assert steps.index("install_service") < steps.index("run_doctor") < steps.index("next_steps")
+    # Under `set -e` a failed check would abort the install, unless it is a condition.
+    script = INSTALLER.read_text()
+    assert re.search(r"^\s*if .*\bzurich-air doctor --config\b", script, re.MULTILINE)
+
+
+def test_installer_names_the_hardware_packages_the_doctor_suggests():
+    match = re.search(r"^HARDWARE_PACKAGES=\(([^)]*)\)", INSTALLER.read_text(), re.MULTILINE)
+    assert match, "HARDWARE_PACKAGES not found in install-pi.sh"
+    assert set(match[1].split()) == set(doctor.HARDWARE_PACKAGES)
 
 
 def test_installer_never_traces_commands():
