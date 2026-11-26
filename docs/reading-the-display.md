@@ -4,7 +4,7 @@ Zurich Air shows the air traffic around Zürich as an air traffic controller mig
 a round radar on the left and, on the right, the five aircraft most worth a look. This
 page explains everything on the screen. No technical knowledge needed.
 
-![The display with eleven numbered callouts, rendered from synthetic data](images/anatomy.png)
+![The display with fifteen numbered callouts, rendered from synthetic data](images/anatomy.png)
 
 <sub>Rendered from synthetic data: every flight in these pictures is invented.</sub>
 
@@ -12,23 +12,29 @@ page explains everything on the screen. No technical knowledge needed.
 2. **Live dot and clock.** The time of the last update. The dot is filled while fresh
    data is arriving and turns into a hollow ring when it is not (see
    [When something is different](#when-something-is-different)).
-3. **North.** North is always at the top. The ticks around the edge mark every 10°, with
+3. **Aircraft count.** How many aircraft are on the radar right now.
+4. **North.** North is always at the top. The ticks around the edge mark every 10°, with
    longer ones every 30° and at north, east, south and west.
-4. **Range rings.** The dotted rings are 20 km and 40 km from the centre; the solid edge
-   is 60 km away. The rings carry no labels: the range is in the footer (11).
-5. **Zürich.** The small cross in the middle is the centre of Zürich.
-6. **Zürich Airport.** Its three runways, drawn a little larger than to scale so that
+5. **Range rings.** The dotted rings are 20 km and 40 km from the centre; the solid edge
+   is 60 km away.
+6. **Range.** How far the radar reaches: its edge is 60 km from the centre.
+7. **Zürich.** The small cross in the middle is the centre of Zürich.
+8. **Zürich Airport.** Its three runways, drawn a little larger than to scale so that
    you can make them out, and its code, ZRH. When aircraft crowd around the airport the
    code is left out rather than drawn half hidden.
-7. **An aircraft.** Each symbol points in the direction the aircraft is flying.
-8. **Trail.** The dotted line behind an aircraft shows where it has just been.
-9. **Number badge.** Ties an aircraft on the radar to the row of the list with the same
-   number.
-10. **A row of the flight list.** Who it is, how high it is, and where it is going.
-11. **Footer.** On the left, how many aircraft are on the radar and how far it reaches
-    (60 km). On the right, where the data comes from, or since when none has arrived.
-    The real display names a community network of receivers here, such as `ADSB.FI`;
-    these pictures say `SYNTHETIC DATA` because their traffic is made up.
+9. **An aircraft.** Each symbol points in the direction the aircraft is flying.
+10. **Trail.** The dotted line behind an aircraft shows where it has just been.
+11. **Number badge.** Ties an aircraft on the radar to the row of the list with the same
+    number.
+12. **A row of the flight list.** Who it is, how high it is, and where it is going.
+13. **Route.** Where a flight comes from or goes to: `→ JFK` is on its way to New York,
+    `DXB →` comes from Dubai (see
+    [Routes, ARR, DEP and the arrows](#routes-arr-dep-and-the-arrows)).
+14. **Airport line.** The runways Zürich is using and the weather at the airport (see
+    [The airport line](#the-airport-line)).
+15. **Data source.** Where the data comes from, or since when none has arrived. The real
+    display names a community network of receivers here, such as `ADSB.FI`; these
+    pictures say `SYNTHETIC DATA` because their traffic, weather and routes are made up.
 
 The display updates every minute, just after the minute turns.
 
@@ -57,7 +63,7 @@ and anything beyond 60 km.
 
 ```
 ▮1 UAE87          ▼ 2800 FT
-   Emirates · A380      ARR
+   Emirates · A380    DXB →
 ```
 
 Each row has two lines:
@@ -73,8 +79,9 @@ Each row has two lines:
   the display shortens this by meaning, never mid-word: `Swiss · A220-300`, then
   `Swiss · A220`, then `A220-300`, then `A220`. Whatever is unknown is left out; the
   display never guesses.
-- **Where it is going**, on the right: `ARR`, `DEP` or an arrow (see
-  [ARR, DEP and the arrows](#arr-dep-and-the-arrows)).
+- **Where it is going**, on the right: its route (`DXB →`, `→ JFK`, `LHR → IST`), else
+  `ARR`, `DEP` or an arrow (see
+  [Routes, ARR, DEP and the arrows](#routes-arr-dep-and-the-arrows)).
 
 ### How the five are chosen
 
@@ -128,8 +135,18 @@ the ground below: Zürich Airport itself lies at 1,416 feet (432 m). One foot is
 30 cm, so 1,000 feet is about 300 m. If you would rather read metres, the display can
 show altitudes as `10 360 M` instead; see [Configuration](configuration.md).
 
-## ARR, DEP and the arrows
+## Routes, ARR, DEP and the arrows
 
+- **A route**: where the flight comes from or goes to, by the airport codes printed on
+  boarding passes (`JFK` is New York, `DXB` Dubai, `LHR` London Heathrow):
+  - `DXB →`: landing at Zürich, coming from Dubai;
+  - `→ JFK`: just took off from Zürich, on its way to New York;
+  - `LHR → IST`: passing over, from London to Istanbul.
+
+  The arrow reads from where the flight comes from to where it goes; it does not point
+  the way the aircraft flies on the map. A route is shown only when the aircraft is seen
+  flying it (see below), so many rows have none. Once shown, it stays with the aircraft:
+  a flight to New York keeps `→ JFK` all the way to the edge of the radar.
 - **`ARR`**: the aircraft is coming in to land at Zürich. It is within 40 km of the
   airport, below 10,000 feet, descending (or level and very low) and heading towards it.
 - **`DEP`**: the aircraft has just taken off from Zürich. It is within 40 km of the
@@ -139,10 +156,40 @@ show altitudes as `10 360 M` instead; see [Configuration](configuration.md).
   the radar.
 
 The aircraft's radio signals carry no flight plan, so the display works this out from
-how it moves, and says `ARR` or `DEP` only when that is clear. A plane on its way in
+how it moves, and says `ARR` or `DEP` only when that is clear. Routes come from a public
+table of airline schedules, and schedules are not always right: the display shows a route
+only if the aircraft really behaves like it, landing at Zürich for a route that ends
+there, taking off for one that starts there, or flying towards the destination and away
+from the origin when passing over. When in doubt, it shows no route. A plane on its way in
 that is still flying away from the airport to line up shows an arrow until it turns
 towards the airport. Helicopters never get `ARR` or `DEP`: they fly between their own
 landing sites.
+
+## The airport line
+
+```
+LDG 14 · DEP 28 · 270° 8 KT G18 · 4 °C · QNH 1018
+```
+
+The left of the footer tells you how things stand at Zürich Airport:
+
+- **`LDG 14`**: aircraft are landing on runway 14, **`DEP 28`**: taking off from
+  runway 28. Several runways are listed busiest first (`LDG 14 16`). A runway is named
+  after the direction it points to, in tens of degrees: runway 28 points roughly west
+  (about 280°). The display works the runways out by watching aircraft line up with
+  them, so a runway appears only after an aircraft has used it in the last 20 minutes;
+  at night there may be none.
+- **`270° 8 KT G18`**: the wind blows from 270° (the west) at 8 knots (about 15 km/h),
+  with gusts of 18 knots. `VRB` means a variable direction, `CALM` no wind at all.
+  Aircraft take off and land into the wind, which is why the wind decides the runways.
+- **`4 °C`**: the air temperature at the airport.
+- **`QNH 1018`**: the air pressure in hectopascals that pilots set their altimeters to.
+  High pressure (1030 and more) usually means settled weather, low (below 1000) unsettled.
+
+The weather is the airport's latest official report (a METAR), issued every half hour.
+When the line is too long, the least important parts are left out, starting at the end.
+Whatever is not known is left out too: without a recent report there is no weather, and
+when nothing is known at all the left of the footer stays empty.
 
 ## When something is different
 
@@ -156,6 +203,7 @@ landing sites.
 - **NO DATA SINCE 15:31.** No new data has arrived for more than 5 minutes, for example
   because the Wi-Fi or the data service is down. The last picture stays on the screen,
   the dot turns hollow and the footer says in bold since when there has been no data.
+  The airport line stays as long as its reports are recent enough.
   The clock keeps running. Nothing needs doing: the display keeps trying and goes back
   to normal as soon as data arrives.
 - **WAITING FOR DATA.** After 30 minutes without data the radar and the list are
@@ -178,8 +226,8 @@ e-paper screen keeps its last picture even without power. See
   unlabelled symbols, to keep the radar readable.
 - **Some owners ask not to be tracked.** Aircraft whose owners have opted out of public
   tracking, or that fly with a temporary anonymous address, are never put in the list,
-  however interesting they are. They appear only as an unnumbered symbol on the radar,
-  and are counted in the footer.
+  however interesting they are, and the display never looks up their route. They appear
+  only as an unnumbered symbol on the radar, and are counted in its corner.
 - **Sometimes the name is simply not known.** Not every aircraft sends a call sign. The
   row then shows the registration or the transponder address instead, and the second
   line can be shorter or empty: the airline is only known for the airline call signs in

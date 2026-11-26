@@ -11,7 +11,8 @@ short comment; the test suite checks that it matches the built-in defaults in
 - [Reference](#reference): [`[location]`](#location) · [`[airport]`](#airport) ·
   [`[radar]`](#radar) · [`[display]`](#display) · [`[update]`](#update) ·
   [`[aircraft]`](#aircraft) · [`[ranking]`](#ranking) ·
-  [`[ranking.weights]`](#rankingweights) · [`[provider]`](#provider)
+  [`[ranking.weights]`](#rankingweights) · [`[provider]`](#provider) ·
+  [`[weather]`](#weather) · [`[routes]`](#routes)
 - [The adsb.lol API key](#the-adsblol-api-key)
 - [Recipes](#recipes)
 
@@ -76,15 +77,18 @@ The radar centre and the place named in the header.
 
 ### `[airport]`
 
-The airport drawn on the radar and used to recognise arrivals and departures.
+The airport drawn on the radar and used to recognise arrivals and departures, the
+runways in use and routes.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `code` | `"ZRH"` | Label drawn next to the runway glyph, and the column heading in `explain`. |
+| `icao` | `"LSZH"` | The airport's four-character ICAO code. Its runways in the bundled [OurAirports](https://ourairports.com/) data are what the runways in use are inferred from; it is the default METAR station (`weather.station`), and routes are checked against it. A code that is not in the bundled data turns the runways in use off, with a line in the log; `zurich-air doctor` reports it. |
 | `latitude` | `47.458056` | Airport reference point, degrees north. Distances for arrivals and departures are measured from here. |
 | `longitude` | `8.548056` | Airport reference point, degrees east. |
 | `elevation_ft` | `1416` | Field elevation in feet. A report slower than 5 kt and no more than 600 ft above it counts as on the ground; level flight up to 2000 ft above it can still count as an arrival. |
 | `runways` | Zürich's three runways | Runway thresholds as `[lat1, lon1, lat2, lon2]`, one array per runway, drawn as a small glyph of the runway layout. Leave empty (`[]`) for a generic airport marker, a small ring at the reference point. The defaults come from [OurAirports](https://ourairports.com/) (public domain). |
+| `runways_in_use` | `true` | Infer the runways in use from the traffic and show them in the footer (`LDG 14 · DEP 28`). Uses the bundled runways of `icao`, not `runways`. |
 
 ### `[radar]`
 
@@ -172,6 +176,30 @@ their terms.
 | `sources` | `["adsb_fi", "adsb_lol"]` | Tried in this order; a source that fails or is rate limited is skipped until it recovers. Choose from `"adsb_fi"` (opendata.adsb.fi) and `"adsb_lol"` (api.adsb.lol); at least one, none twice. |
 | `timeout_s` | `10.0` | Seconds to wait for each request. Must be positive. |
 
+### `[weather]`
+
+The airport's weather in the footer (`270° 8 KT G18 · 4 °C · QNH 1018`), from its METAR
+at aviationweather.gov (US National Weather Service; no account needed).
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | Fetch the METAR and show the weather. |
+| `station` | `""` | ICAO code of the reporting station; `""` uses `airport.icao`. Otherwise four characters, such as `"LSGG"`. |
+| `interval_s` | `600.0` | Seconds between requests, failed ones included. At least 60; a METAR is issued every 30 minutes. |
+| `max_age_s` | `5400.0` | An observation older than this is not shown. Must be positive. |
+
+### `[routes]`
+
+Routes in the flight list (`DXB →`, `→ JFK`, `LHR → IST`), shown only when the aircraft is
+seen flying them. The route files of the airlines seen are downloaded on demand from the
+[Virtual Radar Server standing data](https://github.com/vradarserver/standing-data)
+(CC0) on GitHub, a few per update, and kept for a week; only the airline's code is sent.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | Look up and show routes. |
+| `cache_dir` | `"cache/routes"` | Where the downloaded route files are kept, relative to the working directory. Must be writable (the service's install directory is); `zurich-air doctor` checks it. Not empty. |
+
 ## The adsb.lol API key
 
 adsb.lol works without a key. If you have one, Zurich Air sends it with every adsb.lol
@@ -215,6 +243,7 @@ timezone = "<Area/City>"    # IANA name, e.g. the one timedatectl shows
 
 [airport]
 code = "<code>"             # label beside the airport
+icao = "<ICAO code>"        # e.g. "LSGG": runways in use, weather station, route checks
 latitude = <latitude>       # airport reference point
 longitude = <longitude>
 elevation_ft = <feet>       # field elevation
@@ -226,6 +255,10 @@ runways = []                # [] draws a generic airport marker
   [OurAirports](https://ourairports.com/) (public domain), where the Zürich defaults come
   from, is a convenient cross-check. A wrong airport position quietly breaks the
   arrival and departure labels.
+- **The ICAO code** must name the same airport as the position: `zurich-air doctor`
+  warns when they are more than 5 km apart, or when the code is not among the airports
+  bundled from OurAirports (those with scheduled service). Without it, there are no
+  runways in use; the weather can still come from a nearby station (`weather.station`).
 - **Runways are optional.** With `runways = []` the airport is a small ring. To draw the
   layout, add one `[lat1, lon1, lat2, lon2]` array per runway with the coordinates of its
   two thresholds. The glyph is only 9 px in radius: the directions and the shape of the

@@ -25,6 +25,7 @@ from zurich_air.cli import preview_scene
 from zurich_air.config import Config
 from zurich_air.data import synthetic
 from zurich_air.data.aircraft import Aircraft
+from zurich_air.extras import Extras, RouteLookupTable
 from zurich_air.pipeline import build_scene
 from zurich_air.processing.geo import KM_PER_NM, RadarProjection, destination
 from zurich_air.processing.history import TrackHistory
@@ -32,9 +33,12 @@ from zurich_air.rendering import formatting
 from zurich_air.rendering.fonts import FONT_DIR, cap_height, font, text_width
 from zurich_air.rendering.layout import (
     CALLSIGN,
+    FOOTER_GAP,
     LINE_GAP,
+    MAX_ROW_PITCH,
     RADAR_GAP,
     RING_DOT_SPACING,
+    SMALL,
     TITLE,
     TRACKING,
     Layout,
@@ -76,10 +80,14 @@ def typical_scene(config: Config) -> Scene:
 
 
 def outage_scene(config: Config, minutes: int) -> Scene:
-    """The typical traffic, as last received *minutes* before the clock in the header."""
+    """The typical traffic, as last received *minutes* before the clock in the header.
+
+    Only the traffic is out: the weather is still fresh, and the runways in use, seen
+    longer ago than the runway inference remembers, are not shown.
+    """
     data = synthetic.scene("typical")
     old = dataclasses.replace(data.snapshot, timestamp=data.now - timedelta(minutes=minutes))
-    return build_scene(old, None, config, now=data.now)
+    return build_scene(old, None, config, now=data.now, weather=data.weather)
 
 
 # --- drawing helpers --------------------------------------------------------------------------
@@ -263,7 +271,9 @@ class Callout:
 def anatomy_callouts(config: Config, scene: Scene) -> list[Callout]:
     """The callouts of the anatomy picture, placed from the layout and the radar plot.
 
-    The order is the one of the legend in docs/reading-the-display.md.
+    The order is the one of the legend in docs/reading-the-display.md. The airport line
+    fills most of the footer, so leaders from above reach the bottom margin through the
+    gap before the data source, or go to the sides instead.
     """
     lay = Layout.for_size(config.display.width, config.display.height)
     plot = _radar_plot(config, scene)
@@ -274,8 +284,15 @@ def anatomy_callouts(config: Config, scene: Scene) -> list[Callout]:
     assert scene.now is not None
     clock = formatting.clock(scene.now, config.location.timezone)
     live_dot_x = lay.width - lay.margin - text_width(clock, title, TRACKING) - 6 - 3
-    north = plot.landmarks[0]
+    north, distance, _, count = plot.landmarks[:4]
     cx, cy, r = lay.radar_cx, lay.radar_cy, lay.radar_radius
+    # North's leader runs right, between the header rule and the ring, then up between the
+    # title and the clock.
+    beside_north = (north[2] + 2.5, north[1] + 2)
+    title_end = lay.margin + text_width(
+        f"{config.location.name.upper()}{formatting.SEPARATOR}LIVE AIR TRAFFIC", title, TRACKING
+    )
+    north_up = (title_end + 15, beside_north[1])
 
     # A dot of the 40 km ring, down and to the left, where it is clear of traffic.
     ring_r = 2 * config.radar.ring_step_km * r / config.radar.range_km
@@ -290,11 +307,17 @@ def anatomy_callouts(config: Config, scene: Scene) -> list[Callout]:
     assert bbox is not None
     beside_marker = (marker.origin[0] + bbox[0] - 3, marker.centre[1])
     trail = _trail_point(config, scene, by_label["SWR93D"], 20)
-    badge = next(b for b in plot.badges if b.number == 4).box
-    below_badge = ((badge[0] + badge[2]) / 2 + 2, badge[3] + 2.5)
+    badge = next(b for b in plot.badges if b.number == 2).box
+    beside_badge = (badge[0] - 2.5, (badge[1] + badge[3]) / 2)
     between_radar_and_list = lay.flight_list.left - 7
+    below_list = lay.footer_rule_y - 6
+    source = (scene.source_label or "").upper()
+    footer_gap = lay.width - lay.margin - text_width(source, font(SMALL), TRACKING) - FOOTER_GAP / 2
+    small_middle = cap_height(font(SMALL)) / 2  # above a baseline: the middle of small caps
     row_top = lay.flight_list.top + RADAR_GAP  # cap line of the first row
-    row_bottom = row_top + cap_height(font(CALLSIGN, bold=True)) + LINE_GAP  # its 2nd line
+    callsign_cap = cap_height(font(CALLSIGN, bold=True))
+    row_bottom = row_top + callsign_cap + LINE_GAP  # its 2nd line
+    second_route = row_bottom + MAX_ROW_PITCH - small_middle  # "→ JFK" in the second row
 
     def ray(start: Point, dx: float, dy: float, until_y: float) -> Point:
         return start[0] + dx * (until_y - start[1]) / dy, until_y
@@ -302,22 +325,34 @@ def anatomy_callouts(config: Config, scene: Scene) -> list[Callout]:
     return [
         Callout(1, "top", ((lay.margin + 24, above_text),)),
         Callout(2, "top", ((live_dot_x, above_text),)),
-        Callout(3, "left", ((north[0] - 2.5, 38),)),
-        Callout(4, "left", (ring_dot,)),
+        Callout(3, "left", ((count[0] - 2.5, (count[1] + count[3]) / 2),)),
+        Callout(4, "top", (beside_north, north_up)),
+        Callout(5, "left", (ring_dot,)),
+        Callout(6, "left", ((distance[0] - 1.5, (distance[1] + distance[3]) / 2),)),
         Callout(
-            5, "bottom", ((cx + 3, cy - 3), (cx + 7, cy - 7), (between_radar_and_list, cy - 7))
+            7,
+            "bottom",
+            (
+                (cx + 3, cy - 3),
+                (cx + 7, cy - 7),
+                (between_radar_and_list, cy - 7),
+                (between_radar_and_list, below_list),
+                (footer_gap, below_list),
+            ),
         ),
-        Callout(6, "top", (code_corner, ray(code_corner, 1, -1, 0))),
-        Callout(7, "left", (beside_marker,)),
-        Callout(8, "left", (trail,)),
-        Callout(9, "bottom", (below_badge, ray(below_badge, 1, 2, lay.height))),
+        Callout(8, "top", (code_corner, ray(code_corner, 1, -1, 0))),
+        Callout(9, "left", (beside_marker,)),
+        Callout(10, "left", (trail,)),
+        Callout(11, "left", (beside_badge,)),
         Callout(
-            10,
+            12,
             "right",
             ((lay.width - 7.5, (row_top + row_bottom) / 2),),
             bracket=(row_top, row_bottom),
         ),
-        Callout(11, "bottom", ((lay.margin + 30, lay.footer_baseline + 4),)),
+        Callout(13, "right", ((lay.width - 7.5, second_route),)),
+        Callout(14, "bottom", ((lay.margin + 30, lay.footer_baseline + 4),)),
+        Callout(15, "bottom", ((lay.width - lay.margin - 30, lay.footer_baseline + 4),)),
     ]
 
 
@@ -325,7 +360,10 @@ def _radar_plot(config: Config, scene: Scene) -> RadarPlot:
     """Where the radar puts everything, from drawing it once more on a scratch image."""
     lay = Layout.for_size(config.display.width, config.display.height)
     scratch = Image.new("1", (lay.width, lay.height), 255)
-    return draw_radar(scratch, lay, config, scene.aircraft, scene.featured, scene.trails)
+    return draw_radar(
+        scratch, lay, config, scene.aircraft, scene.featured, scene.trails,
+        count=len(scene.aircraft),
+    )  # fmt: skip
 
 
 def _trail_point(config: Config, scene: Scene, icao: str, distance_px: float) -> Point:
@@ -514,13 +552,17 @@ def traffic(config: Config, minute: int) -> tuple[Aircraft, ...]:
 
 def timelapse_frames(config: Config, frames: int = TIMELAPSE_FRAMES) -> list[Image.Image]:
     """The display minute by minute, through the same pipeline as the live app: the
-    history builds the trails and each flight list carries over to the next frame."""
+    history builds the trails, each flight list carries over to the next frame, and
+    verified routes are remembered (departures keep theirs as they fly out). The weather
+    and runways in use stay those of the typical scene."""
     start = synthetic.TIMESTAMP
     history = TrackHistory()
     for minute in range(-TRAIL_WARMUP_MINUTES, 0):
         for a in traffic(config, minute):
             history.add(a.icao, a.lat, a.lon, start + minute * MINUTE)
-    template = synthetic.scene("typical").snapshot  # source label
+    typical = synthetic.scene("typical")
+    template = typical.snapshot  # source label
+    extras = Extras(config, route_table=RouteLookupTable(typical.route))
     renderer = Renderer(config)
     featured: list[str] = []
     images = []
@@ -528,9 +570,13 @@ def timelapse_frames(config: Config, frames: int = TIMELAPSE_FRAMES) -> list[Ima
         now = start + minute * MINUTE
         snapshot = dataclasses.replace(template, aircraft=traffic(config, minute), timestamp=now)
         history.update(snapshot)
-        scene = build_scene(snapshot, history, config, now, None, featured)
+        scene = build_scene(
+            snapshot, history, config, now, None, featured,
+            weather=typical.weather, runways=typical.runways,
+        )  # fmt: skip
         featured = [a.icao for a in scene.featured]
-        images.append(renderer.render(scene))
+        routes = extras.routes(scene.aircraft, scene.featured, now)
+        images.append(renderer.render(dataclasses.replace(scene, routes=routes)))
     return images
 
 
