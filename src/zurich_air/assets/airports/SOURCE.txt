@@ -1,0 +1,13 @@
+Airport and runway data for zurich_air.data.airports
+
+Source:    OurAirports, https://ourairports.com/data/
+Licence:   public domain (the ourairports-data repository uses the Unlicense)
+Generated: 2026-11-26 by scripts/update-airports.py
+
+https://davidmegginson.github.io/ourairports-data/airports.csv  sha256 87a8ff07a823702153d4e5d4caa72148633812fb8c9a9cd81fca610ff3c112bf
+https://davidmegginson.github.io/ourairports-data/runways.csv  sha256 5fc89f7ad760a185e44f006f3c4bc0c81b202786f3db3b43b75c671a2b49b64a
+
+airports.csv.gz: 3260 airports, large or medium with scheduled service,
+                 plus LSZH
+runways.csv.gz:  4154 runways, open, with both ends, no helicopter or water lanes,
+                 ends within 10 km of the airport
