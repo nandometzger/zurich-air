@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Keep the actions in .github/workflows/ up to date, in one pull request a month.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]

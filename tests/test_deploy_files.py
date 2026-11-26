@@ -186,9 +186,13 @@ FORBIDDEN = {
     "adsb.lol API key value": r"ZURICH_AIR_ADSB_LOL_KEY=\w",
 }
 DEPLOY_FILES = [GUIDE, UNIT, *sorted((ROOT / "scripts").glob("*.sh"))]
+# Issue and pull request templates: whatever they show as an example gets copied.
+GITHUB_FILES = sorted(p for p in (ROOT / ".github").rglob("*") if p.is_file())
 
 
-@pytest.mark.parametrize("path", DEPLOY_FILES, ids=lambda p: str(p.relative_to(ROOT)))
+@pytest.mark.parametrize(
+    "path", [*DEPLOY_FILES, *GITHUB_FILES], ids=lambda p: str(p.relative_to(ROOT))
+)
 def test_no_machine_specific_paths_or_credentials(path):
     text = path.read_text()
     found = [name for name, pattern in FORBIDDEN.items() if re.search(pattern, text)]
