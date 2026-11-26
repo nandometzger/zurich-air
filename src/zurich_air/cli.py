@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image
 
-from zurich_air import __version__
+from zurich_air import __version__, doctor
 from zurich_air.app import FETCH_MARGIN_KM, App
 from zurich_air.config import Config, ConfigError, load_config
 from zurich_air.data import synthetic
@@ -107,6 +107,19 @@ def main(argv: list[str] | None = None) -> int:
         "flight list forward. Without this, live traffic is fetched once",
     )
 
+    check = commands.add_parser(
+        "doctor",
+        parents=[common],
+        help="check the setup: config, clock, rendering, display, data sources, service",
+        description="Check the setup and print one line per check: OK, WARN, FAIL or SKIP, "
+        "with a fix under every problem. Changes nothing. Exits with status 1 if any check "
+        "failed; warnings alone exit with 0.",
+    )
+    _add_config_arg(check)
+    check.add_argument(
+        "--offline", action="store_true", help="skip the data sources: no network requests"
+    )
+
     args = parser.parse_args(argv)
     configure_logging(args.log_level)
     if args.command == "preview":
@@ -117,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
         return _live(args, parser, once=False)
     if args.command == "explain":
         return _explain(args, parser)
+    if args.command == "doctor":
+        return _doctor(args)
     parser.print_help()
     return 0
 
@@ -232,6 +247,12 @@ def _explain(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         snapshots = [fetched]
     print(explain_ranking(snapshots, config))
     return 0
+
+
+def _doctor(args: argparse.Namespace) -> int:
+    results = doctor.run_checks(args.config, offline=args.offline)
+    print(doctor.report(results))
+    return doctor.exit_status(results)
 
 
 def explain_ranking(snapshots: list[TrafficSnapshot], config: Config) -> str:
