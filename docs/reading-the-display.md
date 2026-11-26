@@ -71,7 +71,10 @@ Each row has two lines:
 - **Call sign**, in bold: the name the flight uses on the radio, an airline code plus a
   flight number (`SWR8` is Swiss, `EDW24` Edelweiss, `SAZ3` Rega). An aircraft without
   one shows its registration (`HB-CXB`), or else its transponder address, six letters and
-  digits such as `4B1805`. A name too long for the row ends in "…".
+  digits such as `4B1805`. It is always shown in full: when a long one needs the room,
+  the display sets it a little closer to the altitude and a size smaller, then leaves out
+  the altitude's unit (`6900` for `6900 FT`) and, only if that is not enough, the climb
+  or descent triangle.
 - **Altitude**, with ▲ when the aircraft is climbing and ▼ when it is descending (by at
   least 300 feet per minute; no triangle: level flight, or not known). See
   [Units](#units).

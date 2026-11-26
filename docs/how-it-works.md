@@ -610,6 +610,10 @@ mode `"1"` from the start rather than converting a greyscale picture at the end.
 - **Shortened by meaning.** When the operator and model do not fit, the description gives
   way step by step (`Swiss · 777-300ER` → `Swiss · 777` → `777-300ER` → `777`), never with
   an ellipsis. Missing fields are left out; nothing is guessed.
+- **Callsigns in full.** A callsign is never cut short. When a row is tight, the gap to
+  the altitude first shrinks from 8 to 4 px, then the callsign is set at 13 px instead of
+  14 px bold, then the altitude loses its unit and thousands space (`6900 FT` becomes
+  `6900`), and only as a last resort does the climb or descent triangle go.
 
 ## Reliability
 
