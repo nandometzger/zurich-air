@@ -1,14 +1,15 @@
 # Roadmap
 
-Where Zurich Air stands and where it might go. Only **v1** is a commitment. Everything
-after it is a list of ideas, each with what it would take and what is still unknown;
-ideas change as the device meets real walls, real Wi-Fi and real traffic. To discuss one,
-or to propose your own, [open an issue](https://github.com/nandometzger/zurich-air/issues).
+Where Zurich Air stands and where it might go. Only **v1** is a commitment. **v2** has a
+chosen scope and a hope rather than a date. Everything else is a list of ideas, each with
+what it would take and what is still unknown; ideas change as the device meets real
+walls, real Wi-Fi and real traffic. To discuss one, or to propose your own,
+[open an issue](https://github.com/nandometzger/zurich-air/issues).
 
 - [v1: Christmas 2026](#v1-christmas-2026)
 - [v1.x: polish](#v1x-polish)
-- [v2: "Spotter's edition"](#v2-spotters-edition)
-- [v2: for everyone](#v2-for-everyone)
+- [v2: weather, destinations and any airport](#v2-weather-destinations-and-any-airport)
+- [Parked ideas](#parked-ideas)
 - [Deliberately not planned](#deliberately-not-planned)
 
 ## v1: Christmas 2026
@@ -85,84 +86,79 @@ Small improvements once v1 hangs on a wall. Ideas, not commitments.
   is flying at a glance. *Needs:* shapes that stay legible in 1-bit at 15 px, mapped from
   ICAO type codes in `data/reference.py`.
 
-## v2: "Spotter's edition"
+## v2: weather, destinations and any airport
 
-The recommended direction for a second version: the display learns from what it sees over
-Zürich, day after day. Ideas, in a rough order.
+The second version tells a little more, without asking more of whoever glances at it: the
+weather and the runways in use, and where a flight is going whenever that can be checked.
+And it becomes easy to set up for another city. **Target:** parts 1 and 2 before Christmas
+if time allows, once the e-paper backend works; part 3 afterwards.
 
-### 1. A receiver of its own
-
-An RTL-SDR USB stick and a 1090 MHz antenna, decoded on the Pi by
-[readsb](https://github.com/wiedehopf/readsb). The display would no longer depend on an
-internet service for its data, and it could feed the same community networks it reads
-from today.
-
-- **Software.** readsb writes the JSON format the parser already reads (it accepts the
-  `aircraft` key of a local readsb as well as the `ac` key of the APIs), so this is mostly
-  a new local source next to the HTTP ones in `data/provider.py`, filtered to the radar
-  range on the Pi.
-- **Hardware.** A one-time cost of roughly CHF 40–60, no subscription. The Pi Zero 2 W has
-  one micro-USB data port, so the stick needs an OTG adapter, and the power supply has to
-  cover it too.
-- **Open questions.** Whether a Pi Zero 2 W can decode and render comfortably at the same
-  time (to be measured). How much an indoor antenna behind a window receives, compared
-  with the networks' coverage; the network could stay as a fallback. Types,
-  registrations and the privacy flags come from the networks' aircraft database; locally,
-  readsb would need a database file for them, or rows would show less.
-
-### 2. A spotter's logbook and "Yesterday at ZRH"
-
-Remember what flew past, in a small SQLite database (Python's standard `sqlite3`, no new
-dependency), and during quiet hours show a summary page instead of a radar at night: the
-observed movements, the busiest hour, the rarest visitors and the types seen for the
-first time.
-
-- *Needs:* a schema for sightings, writes batched to spare the SD card, a second page
-  layout, and wording that makes clear these are observed and inferred movements, not
-  official airport figures.
-- *Privacy:* LADD and PIA aircraft are counted but never logged by name, as on the
-  display.
-
-### 3. Airport and weather line
+### 1. Airport and weather line
 
 One line with the weather at Zürich Airport and the runways in use.
 
 - **Weather.** The METAR for LSZH from [aviationweather.gov](https://aviationweather.gov),
-  which is free and needs no key, polled far less often than the traffic. *Needs:* room
-  in the layout, a choice of the few fields worth showing (wind, visibility, temperature,
-  QNH), and the same honesty about stale data as the radar.
+  which is free and needs no key, polled far less often than the traffic: wind,
+  temperature and QNH. *Needs:* room in the layout, and the same honesty about stale data
+  as the radar.
 - **Runways in use**, inferred from the aircraft actually seen landing and taking off:
   match the tracks of `ARR` and `DEP` aircraft close to the airport with the runway
   directions in `airport.runways`, and show a runway only when several movements agree.
 
-### 4. Destinations, but only when they agree
+### 2. Destinations, only when they check out
 
 ADS-B carries no flight plan, which is why Zurich Air shows no routes today (see
-[Data sources](docs/data-sources.md#why-there-are-no-routes-or-destinations)). A
-destination could be shown when a free route source and the observed flight agree: a
-route ending at ZRH for an aircraft seen arriving, or starting there for one seen
-departing. Otherwise nothing is shown. *Needs:* a free source whose terms allow this use
-and whose data is good enough, which has yet to be found, and room in the flight list.
+[Data sources](docs/data-sources.md#why-there-are-no-routes-or-destinations)). v2 adds an
+offline route table from the [standing data](https://github.com/vradarserver/standing-data)
+of Virtual Radar Server (CC0), which maps callsigns to routes, and shows a route only when
+it agrees with what the aircraft is observed doing:
 
-## v2: for everyone
+- an aircraft seen departing (`DEP`) must be on a route that starts at ZRH, one seen
+  arriving (`ARR`) on a route that ends there;
+- an aircraft passing over must be heading for its destination and have made progress
+  from its origin.
 
-Making Zurich Air easier to build for any city.
+Anything else shows no destination, as today.
 
-- **Any airport from its ICAO code.** Fill the airport's position, elevation and runway
-  thresholds from [OurAirports](https://ourairports.com/) data (public domain, where the
-  Zürich defaults come from) instead of typing coordinates by hand. *Needs:* a new key,
-  because `airport.code` is only the label on the radar; a decision between bundling a
-  trimmed dataset and a one-time download; and operator names for other regions in
-  `data/reference.py`.
-- **A prebuilt SD-card image** with Zurich Air installed, built in CI for each release.
-  *Needs:* an image build pipeline, release tags, and a way to set the Wi-Fi and user on
-  first boot (whether Raspberry Pi Imager's customisation works with a custom image is to
-  be checked).
-- **A small settings page** at `http://zurich-air.local` for the location, units and
-  quiet hours, plus the latest `zurich-air doctor` results and the current frame.
-  *Needs:* no new dependency (Python's standard HTTP server), validation by the existing
-  config loader before anything is saved, and some protection on a shared network, for
-  example a code shown on the display.
+- **Measured** on live traffic around Zürich: the table knows a route for 82% of the
+  aircraft, and 45 of the 49 routes checked passed.
+- **The remaining risk:** the far end of a route lies well beyond the 60 km the display
+  sees and cannot be checked. A flight that keeps its callsign but no longer goes where the
+  table says would still pass.
+- *Needs:* room in the flight list for a destination code, and a refresh of the table now
+  and then, since airlines change their schedules every season.
+
+### 3. Any airport, and easy setup
+
+Making Zurich Air easy to build for any city.
+
+- **Any airport from its ICAO code.** [OurAirports](https://ourairports.com/) data (public
+  domain, where the Zürich defaults come from) is now bundled: some 3,300 larger airports
+  with scheduled service and their runways, about 210 kB, read by `data/airports.py`. The
+  airport's position, elevation and runway layout can then follow from its code instead
+  of being typed by hand. *Needs:* a config key for it, because `airport.code` is only the
+  label on the radar, and operator names for other regions in `data/reference.py`.
+- **A one-line installer.** One command on a fresh Raspberry Pi OS instead of the three in
+  the [Pi guide](docs/raspberry-pi.md#5-install-zurich-air); Wi-Fi and the user are still
+  set with Raspberry Pi Imager. *Needs:* `install-pi.sh` to fetch the repository itself
+  when it runs from a download, and a simple way to choose the city and the airport.
+- **No prebuilt SD-card image.** Building and testing an image for every release is more
+  upkeep than a hobby project should carry, and the installer gets to the same place.
+- **A small settings page**, lowest priority: `http://zurich-air.local` for the location,
+  units and quiet hours, plus the latest `zurich-air doctor` results and the current
+  frame. *Needs:* no new dependency (Python's standard HTTP server), validation by the
+  existing config loader before anything is saved, and some protection on a shared
+  network, for example a code shown on the display.
+
+## Parked ideas
+
+Set aside because they would make Zurich Air more complicated than the object on the wall
+it is meant to be.
+
+- **A receiver of its own** (an RTL-SDR stick and an antenna, decoded by readsb): extra
+  hardware, power and placement to get right, for data the networks already provide.
+- **A spotter's logbook and "Yesterday at ZRH"**: a database, SD-card writes and a second
+  page layout, for statistics that a display meant to be glanced at does not need.
 
 ## Deliberately not planned
 
