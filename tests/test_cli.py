@@ -105,6 +105,12 @@ class FakeProvider:
         )
 
 
+@pytest.fixture(autouse=True)
+def no_extras(monkeypatch):
+    """once and run without weather, runway or route sources (and so no route cache)."""
+    monkeypatch.setattr(cli.Extras, "from_config", classmethod(lambda cls, config: cls(config)))
+
+
 def test_once_shows_a_frame_and_saves_the_response(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "build_provider", lambda config: FakeProvider())
     saved = tmp_path / "raw" / "snap.json"

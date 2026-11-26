@@ -1,7 +1,9 @@
 """Turn a traffic snapshot into the Scene the renderer draws.
 
 This is the one path from data to screen, shared by the live app and the ``preview``
-command: filter → rank → trails → live/stale status → attribution.
+command: filter → rank → trails → live/stale status → attribution, with the airport's
+weather and runways in use alongside. Verified routes are added by the caller once the
+flight list is known (see extras.py).
 """
 
 from __future__ import annotations
@@ -11,9 +13,11 @@ from datetime import datetime
 
 from zurich_air.config import Config
 from zurich_air.data.aircraft import TrafficSnapshot
+from zurich_air.data.metar import Weather
 from zurich_air.processing.filtering import visible_aircraft
 from zurich_air.processing.history import TrackHistory
 from zurich_air.processing.ranking import rank
+from zurich_air.processing.runways import RunwayUse
 from zurich_air.rendering.renderer import Scene
 
 
@@ -24,6 +28,9 @@ def build_scene(
     now: datetime,
     last_success: datetime | None = None,
     previous_featured: Sequence[str] = (),
+    *,
+    weather: Weather | None = None,
+    runways: RunwayUse | None = None,
 ) -> Scene:
     """The frame to show at *now* (timezone-aware).
 
@@ -37,14 +44,21 @@ def build_scene(
     Data older than ``update.stale_after_s`` stays on screen, marked stale; older than
     ``update.hide_after_s`` it is no longer drawn, so that aircraft long gone never pass
     for current traffic.
+
+    *weather* and *runways* go into the scene as they are, also while waiting for traffic
+    data: their sources judge their own age.
     """
     if snapshot is None:
-        return Scene(aircraft=[], featured=[], updated_at=None, status="waiting", now=now)
+        return Scene(
+            aircraft=[], featured=[], updated_at=None, status="waiting", now=now,
+            weather=weather, runways=runways,
+        )  # fmt: skip
     age_s = (now - (last_success or snapshot.timestamp)).total_seconds()
     if age_s > config.update.hide_after_s:
         return Scene(
-            aircraft=[], featured=[], updated_at=snapshot.timestamp, status="waiting", now=now
-        )
+            aircraft=[], featured=[], updated_at=snapshot.timestamp, status="waiting", now=now,
+            weather=weather, runways=runways,
+        )  # fmt: skip
 
     aircraft = visible_aircraft(snapshot.aircraft, config)
     featured = rank(aircraft, config, previous_featured)[: config.aircraft.featured]
@@ -58,4 +72,6 @@ def build_scene(
         status="stale" if age_s > config.update.stale_after_s else "live",
         now=now,
         source_label=snapshot.source.upper() if snapshot.source else None,
+        weather=weather,
+        runways=runways,
     )

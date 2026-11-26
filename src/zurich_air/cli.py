@@ -21,6 +21,7 @@ from zurich_air.data.aircraft import TrafficSnapshot
 from zurich_air.data.provider import ProviderError, build_provider
 from zurich_air.data.readsb import ReadsbError, parse_snapshot
 from zurich_air.display import DisplayUnavailableError, create_display
+from zurich_air.extras import Extras
 from zurich_air.pipeline import build_scene
 from zurich_air.processing.filtering import visible_aircraft
 from zurich_air.processing.history import TrackHistory
@@ -187,7 +188,7 @@ def _live(args: argparse.Namespace, parser: argparse.ArgumentParser, *, once: bo
         print(f"zurich-air: error: {exc}", file=sys.stderr)
         return 2
     provider = build_provider(config.provider)
-    app = App(config, provider, display)
+    app = App(config, provider, display, extras=Extras.from_config(config))
     if not once:
         return app.run()
     try:

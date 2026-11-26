@@ -1,9 +1,17 @@
 """The live loop: fetch → history → scene → render → display, built to run for months.
 
+Each update also feeds the runway inference, asks for the airport's METAR when it is due
+and checks routes for the flight list (see extras.py); none of these can stop a frame.
+
 No single failure stops the display. A provider error keeps the last good data (shown
 stale, later hidden); an unexpected exception in any stage is logged, with a traceback
 at most hourly per kind, and the next update carries on. Only a display that keeps
 failing ends the process, with a non-zero status so that systemd restarts it.
+
+**Time per update**, worst case: the traffic sources' timeouts (``provider.timeout_s``
+for each source tried, 2 x 10 s by default), plus ``extras.MAX_EXTRA_S`` (15 s: one
+METAR request and two route files), plus rendering and the panel. That is well under a
+minute, the update interval, and far from the 5-minute systemd watchdog.
 
 Updates follow ``update.interval_s``, and ``update.quiet_interval_s`` during quiet hours.
 Under systemd the loop reports READY, WATCHDOG and STOPPING (see systemd.py). The log
@@ -14,6 +22,7 @@ Refresh policies for the e-paper panel are Milestone 6.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import signal
 import threading
@@ -33,6 +42,7 @@ from zurich_air.config import Config
 from zurich_air.data.aircraft import TrafficSnapshot
 from zurich_air.data.provider import ProviderError, TrafficProvider
 from zurich_air.display.base import Display
+from zurich_air.extras import Extras
 from zurich_air.pipeline import build_scene
 from zurich_air.processing.history import TrackHistory
 from zurich_air.rendering.renderer import Renderer
@@ -152,6 +162,7 @@ class App:
         *,
         renderer: Renderer | None = None,
         history: TrackHistory | None = None,
+        extras: Extras | None = None,
         notifier: Notifier | None = None,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
@@ -160,6 +171,7 @@ class App:
         self.display = display
         self.renderer = renderer or Renderer(config)
         self.history = history or TrackHistory()
+        self.extras = extras or Extras(config)  # none unless given: see Extras.from_config
         self.notifier = notifier or Notifier()  # a no-op outside systemd
         self.clock = clock
         self.snapshot: TrafficSnapshot | None = None  # last good data
@@ -178,7 +190,8 @@ class App:
         """Fetch, render and show one frame, and log what happened. Never raises.
 
         On a provider failure the last good snapshot is kept; the scene turns stale and
-        later empty as it ages (see pipeline.py). The display is only updated when the
+        later empty as it ages (see pipeline.py). The weather, runways in use and routes
+        come from :attr:`extras`, which never raise. The display is only updated when the
         frame differs from the one already shown. Nothing happens while the system
         clock is not set.
         """
@@ -187,19 +200,32 @@ class App:
             return TickReport(clock_wrong=True)
         errors: list[str] = []
         problem = self._fetch(now, errors)
+        fresh = problem is None
+        extras = self.extras
+        if fresh and self.snapshot is not None:
+            extras.observe(self.snapshot.aircraft, self.history, now)
+        weather, runways = extras.weather(now), extras.runways(now)
         scene = self._attempt(
             "build",
             errors,
             lambda: build_scene(
-                self.snapshot, self.history, self.config, now, self.last_success, self.featured
+                self.snapshot,
+                self.history,
+                self.config,
+                now,
+                self.last_success,
+                self.featured,
+                weather=weather,
+                runways=runways,
             ),
         )
         image = None
         if scene is not None:
             self.featured = tuple(a.icao for a in scene.featured)
+            routes = extras.routes(scene.aircraft, scene.featured, now, fresh=fresh)
+            scene = dataclasses.replace(scene, routes=routes)
             image = self._attempt("render", errors, lambda: self.renderer.render(scene))
         refreshed = image is not None and self._show(image, errors)
-        fresh = problem is None
         report = TickReport(
             fresh=fresh,
             source=self.snapshot.source if fresh and self.snapshot else None,
@@ -225,6 +251,7 @@ class App:
         if self._quiet:
             quiet = f" ({update.quiet_interval_s:.0f} s in quiet hours {self._quiet})"
         log.info("running: update every %.0f s%s", update.interval_s, quiet)
+        log.info("extras: %s", self.extras)
         with _stop_on_signals(stop, enabled=handle_signals):
             self.notifier.ready()
             try:

@@ -3,9 +3,11 @@ from datetime import UTC, datetime, timedelta
 
 from zurich_air.config import Config
 from zurich_air.data.aircraft import Aircraft, TrafficSnapshot
+from zurich_air.data.metar import Weather
 from zurich_air.pipeline import build_scene
 from zurich_air.processing.geo import destination
 from zurich_air.processing.history import TrackHistory
+from zurich_air.processing.runways import RunwayUse
 
 CONFIG = Config()
 T0 = datetime(2026, 12, 24, 14, 42, tzinfo=UTC)
@@ -141,3 +143,24 @@ def test_privacy_aircraft_plotted_but_never_featured():
     scene = build_scene(snapshot(T0, private, arrival("4b0002", 30)), None, CONFIG, now=T0)
     assert [a.icao for a in scene.aircraft] == ["4b0001", "4b0002"]
     assert [a.icao for a in scene.featured] == ["4b0002"]
+
+
+WEATHER = Weather("LSZH", T0, 270, False, 8, 18, 4, 1, 1018, "")
+RUNWAYS = RunwayUse(("14",), ("28",))
+
+
+def test_weather_and_runways_go_into_the_scene():
+    scene = build_scene(snapshot(), None, CONFIG, T0, weather=WEATHER, runways=RUNWAYS)
+    assert scene.weather == WEATHER and scene.runways == RUNWAYS
+    assert scene.routes == {}  # added by the caller once the flight list is known
+    plain = build_scene(snapshot(), None, CONFIG, T0)
+    assert plain.weather is None and plain.runways is None
+
+
+def test_weather_and_runways_stay_while_waiting_for_traffic():
+    never = build_scene(None, None, CONFIG, T0, weather=WEATHER, runways=RUNWAYS)
+    late = T0 + timedelta(seconds=CONFIG.update.hide_after_s + 1)
+    hidden = build_scene(snapshot(), None, CONFIG, late, T0, weather=WEATHER, runways=RUNWAYS)
+    for scene in (never, hidden):
+        assert scene.status == "waiting" and not scene.aircraft
+        assert scene.weather == WEATHER and scene.runways == RUNWAYS

@@ -20,8 +20,13 @@ from zurich_air.app import (
 )
 from zurich_air.config import Config
 from zurich_air.data.aircraft import Aircraft, TrafficSnapshot
+from zurich_air.data.metar import Weather
 from zurich_air.data.provider import ProviderError
+from zurich_air.data.routes import Route
+from zurich_air.extras import Extras
 from zurich_air.processing.geo import destination
+from zurich_air.processing.route_check import VerifiedRoute
+from zurich_air.processing.runways import RunwayUse
 from zurich_air.rendering.renderer import Renderer
 
 CONFIG = Config()
@@ -246,6 +251,130 @@ def test_featured_list_is_carried_between_ticks():
     fresh = App(config, FakeProvider(second), MemoryDisplay())
     fresh.tick(later)
     assert fresh.featured == ("b",)
+
+
+# Weather, runways in use and routes ---------------------------------------------------
+
+WEATHER = Weather("LSZH", T0 - timedelta(minutes=22), 270, False, 8, 18, 4, 1, 1018, "")
+
+
+def departing_swr8(at=T0, km_out=10.0):
+    """SWR8 climbing out westwards, *km_out* km from the airport."""
+    airport = (CONFIG.airport.latitude, CONFIG.airport.longitude)
+    lat, lon = destination(*airport, 270, km_out)
+    aircraft = Aircraft(
+        "4b0008", lat, lon, callsign="SWR8", type_code="B77W", altitude_ft=5000,
+        track_deg=270, ground_speed_kt=250, vertical_rate_fpm=2000,
+    )  # fmt: skip
+    return TrafficSnapshot(aircraft=(aircraft,), timestamp=at, source="adsb.fi")
+
+
+class FakeMetar:
+    def __init__(self, error=None) -> None:
+        self.error = error
+
+    def weather(self, now):
+        if self.error:
+            raise self.error
+        return WEATHER
+
+
+class FakeRouteTable:
+    def __init__(self, error=None) -> None:
+        self.error = error
+
+    def lookup(self, callsign):
+        if self.error:
+            raise self.error
+        return Route("SWR8", ("LSZH", "KJFK")) if callsign == "SWR8" else None
+
+
+class FakeMonitor:
+    def __init__(self, error=None) -> None:
+        self.error = error
+        self.updates = []
+
+    def update(self, aircraft, now, history=None):
+        if self.error:
+            raise self.error
+        self.updates.append(now)
+
+    def use(self, now):
+        if self.error:
+            raise self.error
+        return RunwayUse(("14",), ("28",)) if self.updates else RunwayUse()
+
+
+class SceneRecorder(Renderer):
+    def __init__(self, config) -> None:
+        super().__init__(config)
+        self.scenes = []
+
+    def render(self, scene):
+        self.scenes.append(scene)
+        return super().render(scene)
+
+
+def app_with_extras(provider, error=None):
+    extras = Extras(
+        CONFIG,
+        metar=FakeMetar(error),
+        route_table=FakeRouteTable(error),
+        runway_monitor=FakeMonitor(error),
+    )
+    renderer = SceneRecorder(CONFIG)
+    return App(CONFIG, provider, MemoryDisplay(), renderer=renderer, extras=extras), renderer
+
+
+def test_tick_shows_weather_runways_and_verified_routes():
+    app, renderer = app_with_extras(FakeProvider(departing_swr8()))
+    report = app.tick(T0)
+    assert report.refreshed and not report.errors
+    scene = renderer.scenes[-1]
+    assert scene.weather == WEATHER
+    assert scene.runways == RunwayUse(("14",), ("28",))
+    assert scene.routes == {"4b0008": VerifiedRoute("LSZH", "KJFK", "departure")}
+
+
+def test_runways_are_inferred_from_new_data_only():
+    data = departing_swr8()
+    app, _ = app_with_extras(FakeProvider(data, ProviderError("down"), data))
+    monitor = app.extras.runway_monitor
+    app.tick(T0)
+    app.tick(T0 + timedelta(minutes=1))  # no new data: the old positions are not counted again
+    app.tick(T0 + timedelta(minutes=2))
+    assert monitor.updates == [T0, T0 + timedelta(minutes=2)]
+
+
+def test_a_departure_keeps_its_route_as_it_flies_out():
+    later = T0 + timedelta(minutes=8)
+    app, renderer = app_with_extras(FakeProvider(departing_swr8(), departing_swr8(later, 55)))
+    app.tick(T0)
+    app.tick(later)
+    assert renderer.scenes[-1].routes == {"4b0008": VerifiedRoute("LSZH", "KJFK", "departure")}
+
+
+def test_weather_stays_while_waiting_for_traffic():
+    app, renderer = app_with_extras(FakeProvider(ProviderError("down")))
+    report = app.tick(T0)
+    assert report.status == "waiting"
+    assert renderer.scenes[-1].weather == WEATHER
+    assert renderer.scenes[-1].routes == {}
+
+
+@pytest.mark.parametrize("error", [RuntimeError("bug"), OSError("disk full"), KeyError("x")])
+def test_failing_extras_never_break_a_tick(error, caplog):
+    app, renderer = app_with_extras(FakeProvider(departing_swr8(), departing_swr8()), error)
+    with caplog.at_level(logging.WARNING):
+        first = app.tick(T0)
+        second = app.tick(T0 + timedelta(minutes=1))
+    assert first.refreshed and first.fresh and not first.errors
+    assert second.fresh and not second.errors
+    scene = renderer.scenes[-1]
+    assert scene.weather is None and scene.runways is None and scene.routes == {}
+    assert scene.featured  # the traffic is shown all the same
+    extras_warnings = [r for r in caplog.records if r.name == "zurich_air.extras"]
+    assert len(extras_warnings) == 4  # once per part: detection, weather, runways, routes
 
 
 # Unexpected errors -------------------------------------------------------------------
