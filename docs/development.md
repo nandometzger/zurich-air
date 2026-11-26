@@ -12,6 +12,7 @@ hardware. No Raspberry Pi is needed to work on Zurich Air.
 - [Explain the ranking](#explain-the-ranking)
 - [Tests, lint and format](#tests-lint-and-format)
 - [Documentation images](#documentation-images)
+- [Bundled airport data](#bundled-airport-data)
 - [Continuous integration](#continuous-integration)
 - [Extending Zurich Air](#extending-zurich-air)
 
@@ -40,7 +41,9 @@ src/zurich_air/
 ├── cli.py                the zurich-air command and its subcommands
 ├── app.py                the live loop: one tick per interval, error handling, watchdog
 ├── pipeline.py           build_scene: snapshot → Scene, shared by live app and previews
+├── extras.py             weather, runways in use and verified routes; each fails soft
 ├── config.py             typed TOML configuration with defaults and validation
+├── doctor.py             zurich-air doctor: the setup self-check
 ├── schedule.py           when to update: whole intervals, quiet hours, clock sanity
 ├── systemd.py            sd_notify messages and journal-friendly logging
 ├── data/
@@ -48,13 +51,18 @@ src/zurich_air/
 │   ├── provider.py       HTTP sources, fallback chain, backoff and rate limits
 │   ├── readsb.py         defensive parser for readsb JSON
 │   ├── reference.py      operator and type names, notable/widebody/helicopter lists
+│   ├── airports.py       airports and runways by ICAO code, from the bundled data
+│   ├── metar.py          the airport's METAR from aviationweather.gov
+│   ├── routes.py         the VRS route table: on-demand downloads and the disk cache
 │   └── synthetic.py      deterministic invented scenes, for previews and tests only
 ├── processing/
 │   ├── geo.py            distances, bearings, the radar projection
 │   ├── filtering.py      which aircraft belong on the radar
 │   ├── history.py        recent positions for the trails
 │   ├── phase.py          arrival or departure, inferred conservatively
-│   └── ranking.py        scores, reasons and the featured aircraft
+│   ├── ranking.py        scores, reasons and the featured aircraft
+│   ├── runways.py        runways in use, from aircraft lined up with them
+│   └── route_check.py    a route only when the aircraft is seen flying it
 ├── rendering/
 │   ├── renderer.py       the whole frame: header, radar, list, footer
 │   ├── layout.py         screen geometry, spacing and type scale
@@ -62,16 +70,20 @@ src/zurich_air/
 │   ├── flight_list.py    the numbered rows
 │   ├── symbols.py        aircraft sprites, badges, arrows, triangles
 │   ├── fonts.py          B612 and pixel-exact text helpers
-│   └── formatting.py     altitudes, descriptions, clock: data to short strings
+│   └── formatting.py     altitudes, descriptions, airport line, routes: short strings
 ├── display/
 │   ├── __init__.py       create_display: picks the backend
 │   ├── base.py           the Display interface (show, close)
 │   └── mock.py           writes latest.png (and optionally every frame)
-└── assets/fonts/         B612-Regular.ttf and its licence (OFL)
+└── assets/
+    ├── fonts/            B612-Regular.ttf and its licence (OFL)
+    └── airports/         OurAirports airports and runways, and SOURCE.txt
 
-tests/                    the pytest suite; fixtures/ holds a readsb sample
+tests/                    the pytest suite; conftest.py blocks the network, fixtures/
+                          holds a readsb sample
 scripts/install-pi.sh     installs or updates Zurich Air on a Raspberry Pi
 scripts/render-docs-images.py  regenerates docs/images/
+scripts/update-airports.py     regenerates the bundled airport data
 system/zurich-air.service systemd unit template, filled in by the installer
 config.example.toml       every setting with its default
 ```
@@ -89,7 +101,7 @@ defaults are used; `config.toml` is not read automatically.
 | `zurich-air preview` | Renders synthetic scenes or saved responses to PNG. No hardware, no network. |
 | `zurich-air once` | Fetches live traffic once and updates the display (`previews/latest.png` with the mock backend). |
 | `zurich-air run` | Updates continuously until Ctrl-C, as the service does. |
-| `zurich-air explain` | Prints every candidate aircraft with its score and the reasons behind it. |
+| `zurich-air explain` | Prints every candidate aircraft with its score, route and the reasons behind it. |
 | `zurich-air doctor` | Checks the setup; see [Troubleshooting](troubleshooting.md). |
 
 `once` and `run` also take `--out DIR` (where the mock display writes) and
@@ -97,6 +109,11 @@ defaults are used; `config.toml` is not read automatically.
 `latest.png`). `once` exits with 0 when new data arrived and nothing failed, 1 otherwise;
 `run` exits with 0 when stopped and 1 after three display failures in a row. An invalid
 config, or a display backend that is not available, ends either with status 2.
+
+`once`, `run` and a live `explain` download route files into `routes.cache_dir`
+(`cache/routes` in the repository, which git ignores), at most two per update, and fetch
+the METAR. Delete `cache/routes` to start the route table afresh; it is refilled as
+airlines are seen.
 
 ## Previews
 
@@ -122,7 +139,10 @@ The synthetic scenes are an invented afternoon at Zürich: `typical` and `busy` 
 a `quiet` sky, an `empty` one, `degraded` data (missing fields, unknown codes, an
 emergency, odd values, as real feeds produce them) and `stale` data, 11 minutes old. They
 are placed around the default location, so they do not show up on a radar centred
-elsewhere.
+elsewhere. Each scene also carries an invented METAR, runways in use and a small route
+table; the routes go through the real check in `processing/route_check.py`, so a preview
+shows only those a live display would. `degraded` has none of it, and the footer of every
+synthetic scene says `SYNTHETIC DATA`.
 
 ## Save and replay real traffic
 
@@ -142,15 +162,18 @@ uv run zurich-air preview --snapshot snapshots/t*.json --source-label ADSB.FI --
 ```
 
 A snapshot is rendered as if live at the moment it was taken: its time comes from the
-response, or from the file's modification time if the response has none. Snapshots
-contain real traffic, so `snapshots/` is git-ignored: keep them out of the repository
-(see [Data sources](data-sources.md#privacy)).
+response, or from the file's modification time if the response has none. A snapshot
+render has no airport line and no routes. Snapshots contain real traffic, so `snapshots/`
+is git-ignored: keep them out of the repository (see
+[Data sources](data-sources.md#privacy)).
 
 ## Explain the ranking
 
 `explain` shows why each aircraft is or is not in the flight list: one row per candidate
-with its type, altitude, distance from the airport, inferred phase, score and every
-reason that contributed points. A dashed line marks where the list ends.
+with its type, altitude, distance from the airport, inferred phase, verified route, score
+and every reason that contributed points. A dashed line marks where the list ends. Under a
+row whose scheduled route was rejected, a line says why. The runways in use and the
+weather head the table.
 
 ```sh
 uv run zurich-air explain                                      # one live fetch
@@ -162,13 +185,14 @@ uv run zurich-air explain --config config.toml --snapshot snapshots/t5.json
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--scene NAME` | | A synthetic scene instead of live traffic, the same as in [`preview`](#previews), or `all` for each in turn. The first line names the source `synthetic data`. |
-| `--snapshot FILE …` | | Saved readsb responses instead, oldest first. Cannot be combined with `--scene`. |
+| `--snapshot FILE …` | | Saved readsb responses instead, oldest first. Routes come from the route cache only, nothing is downloaded, and there is no weather. Cannot be combined with `--scene`. |
 | `--config FILE` | built-in | Configuration to rank with, e.g. to try other weights. |
 
-Without `--scene` or `--snapshot`, live traffic is fetched once. With several snapshots,
-the earlier ones only carry the flight list forward, so that the `featured before` bonus
-shows up as it would in the live app. The example in
-[How it works](how-it-works.md#an-example) is `uv run zurich-air explain --scene typical`.
+Without `--scene` or `--snapshot`, live traffic and the METAR are fetched once. With
+several snapshots, the earlier ones only carry the flight list and the routes verified in
+them forward, so that the `featured before` bonus and remembered routes show up as they
+would in the live app, and the runways in use are inferred over all of them. The example
+in [How it works](how-it-works.md#an-example) is `uv run zurich-air explain --scene typical`.
 The synthetic scenes are placed around the default location, so a config centred
 elsewhere has no candidates for them.
 
@@ -180,13 +204,19 @@ uv run ruff check                  # lint
 uv run ruff format                 # format (CI runs ruff format --check)
 ```
 
-- Tests never touch the network: the provider tests use a fake opener and clock, and
-  parsing is tested against `tests/fixtures/readsb_small.json`.
+- Tests never touch the network. `tests/conftest.py` makes every outgoing TCP connection
+  fail (it replaces `socket.create_connection`, through which urllib connects), so a test
+  that forgets to replace a data source fails soft and fast instead of going online. The
+  provider, METAR and route table tests use a fake opener and clock (the route table tests
+  also a temporary cache directory), and parsing is tested against
+  `tests/fixtures/readsb_small.json`.
 - Rendering tests draw real frames and look at their pixels.
 - `tests/test_config.py` checks that `config.example.toml` matches the defaults in
   `config.py`: change both together.
 - `tests/test_deploy_files.py` checks the installer and the systemd unit (placeholders,
-  watchdog, restart policy, hardening, no machine-specific paths or credentials). Install
+  watchdog, the worst-case time of an update, restart policy, hardening, a writable
+  working directory for the route cache, no machine-specific paths or credentials), and
+  scans every Markdown page for such paths and credentials too. Install
   [ShellCheck](https://www.shellcheck.net) to have it lint the installer too; otherwise
   that test is skipped. One systemd test runs on Linux only.
 - Ruff is configured in `pyproject.toml`: line length 100, Python 3.11 syntax, and the
@@ -200,6 +230,26 @@ regenerate them and include them in the pull request:
 ```sh
 uv run python scripts/render-docs-images.py
 ```
+
+## Bundled airport data
+
+`src/zurich_air/assets/airports/` holds the airports and runways from
+[OurAirports](https://ourairports.com/data/) (public domain) that `data/airports.py` looks
+up by ICAO code. To refresh them from the current OurAirports files:
+
+```sh
+uv run python scripts/update-airports.py                  # download and regenerate
+uv run python scripts/update-airports.py --include LSZG   # also keep this airport
+uv run python scripts/update-airports.py --source DIR     # read the CSV files from DIR
+```
+
+It keeps the large and medium airports with scheduled service, plus LSZH and any airport
+named with `--include`, and their open runways with both ends (no helicopter or water
+lanes, and none whose ends lie more than 10 km from the airport). The output is
+deterministic: sorted rows, coordinates rounded to 6 decimals, a gzip header without a time
+stamp, so a second run on the same input writes identical files. `SOURCE.txt` records the
+date, the source URLs and their SHA-256. Commit the three files together. Nothing is
+downloaded while Zurich Air runs.
 
 ## Continuous integration
 

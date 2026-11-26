@@ -7,7 +7,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
 <p align="center">
-  <img src="docs/images/hero.png" width="660" alt="Mock-up of Zurich Air in a black picture frame: a radar of aircraft around Zürich on the left, five numbered flights on the right. Rendered from synthetic data.">
+  <img src="docs/images/hero.png" width="660" alt="Mock-up of Zurich Air in a black picture frame: a radar of aircraft around Zürich on the left, five numbered flights on the right, the runways in use and the airport's weather along the bottom. Rendered from synthetic data.">
 </p>
 <p align="center"><sub>Mock-up rendered from synthetic data. Every flight in it is invented; it is not a photo of a device.</sub></p>
 
@@ -34,14 +34,20 @@ anyone can make one.
   low flyers score points; emergencies always come first. `zurich-air explain` prints
   every score and the reason behind it.
 - **A calm list.** Rows keep their place until a newcomer is clearly more interesting.
+- **Routes, only when they check out**: `DXB →`, `→ JFK`, `LHR → IST`, shown only when the
+  aircraft is seen flying that route. Many rows have none; none is ever guessed.
+- **Airport line.** The runways in use, worked out from the aircraft seen using them, and
+  the airport's wind, temperature and QNH from its latest weather report (METAR).
 - **Honest about its data.** After 5 minutes without new data it says `NO DATA SINCE`;
-  after 30 it clears the radar rather than show aircraft long gone. No routes or
-  destinations are shown and nothing is guessed.
+  after 30 it clears the radar rather than show aircraft long gone. Whatever is not known
+  is left out.
 - **Quiet hours.** From 23:30 to 06:00 it updates every 10 minutes instead of every minute.
 - **Privacy.** Aircraft whose owners opted out of tracking (LADD) or fly with a privacy
-  address (PIA) are never named: they stay anonymous markers on the radar.
+  address (PIA) are never named and their routes never looked up: they stay anonymous
+  markers on the radar.
 - **Free data, no account.** [adsb.fi](https://adsb.fi), with [adsb.lol](https://adsb.lol)
-  as fallback; no API key needed.
+  as fallback, and [aviationweather.gov](https://aviationweather.gov). The route table is
+  kept offline: only an airline code (at most with one digit) leaves the device.
 - **Runs unattended** as a systemd service with a watchdog, restarts after crashes and
   hangs, starts without a network and recovers from outages by itself.
 - **One renderer.** A preview on your laptop is pixel for pixel what the panel will show.
@@ -51,15 +57,16 @@ anyone can make one.
 ## Reading the display
 
 <p align="center">
-  <img src="docs/images/anatomy.png" width="600" alt="The display with eleven numbered callouts: title, live dot and clock, north, range rings, Zürich, Zürich Airport, an aircraft, its trail, a number badge, a row of the flight list and the footer. Rendered from synthetic data.">
+  <img src="docs/images/anatomy.png" width="600" alt="The display with fifteen numbered callouts: title, live dot and clock, aircraft count, north, range rings, range, Zürich, Zürich Airport, an aircraft, its trail, a number badge, a row of the flight list, a route, the airport line and the data source. Rendered from synthetic data.">
 </p>
 <p align="center"><sub>Rendered from synthetic data.</sub></p>
 
 The radar on the left is a map seen from above, with Zürich at the centre and true
 distances: dotted rings at 20 and 40 km, the solid edge at 60 km. Numbered aircraft match
-the rows on the right, which give the callsign, the altitude with ▲ climbing or ▼
-descending, the airline and type, and `ARR`, `DEP` or an arrow for the direction of flight.
-The dot beside the clock is filled while fresh data arrives.
+the rows on the right: callsign, altitude with ▲ climbing or ▼ descending, airline and
+type, and a checked route (`→ JFK`), else `ARR`, `DEP` or an arrow for the direction of
+flight. The footer gives the runways in use, the airport's weather and the data source;
+the dot beside the clock is filled while fresh data arrives.
 **[Reading the display](docs/reading-the-display.md)** explains every element, the units
 and how the five are chosen, without assuming any technical knowledge.
 
@@ -70,12 +77,15 @@ flowchart LR
     AC["Aircraft"] -->|"ADS-B broadcasts"| RX["Receivers run by volunteers"]
     RX --> AG["adsb.fi · adsb.lol"]
     AG -->|"HTTPS, once a minute"| ZA["zurich-air on the Raspberry Pi"]
+    WX["aviationweather.gov"] -->|"METAR, every 10 minutes"| ZA
+    VR["VRS standing data on GitHub"] -->|"route files, per airline"| ZA
     ZA -->|"400 × 300, 1-bit"| EP["E-paper panel"]
 ```
 
 Zurich Air does not receive radio signals itself. Once a minute it asks a community network
 for every aircraft around the city, filters and ranks them, draws a black-and-white frame
-and sends it to the display only if it changed.
+and sends it to the display only if it changed. Along the way it infers the runways in
+use, fetches the airport's weather every ten minutes and checks the listed flights' routes.
 
 <p align="center">
   <img src="docs/images/timelapse.gif" width="560" alt="Animation of the display over 14 minutes, one frame per minute: aircraft move, trails follow, arrivals land and drop off the radar. Rendered from synthetic data.">
@@ -83,7 +93,8 @@ and sends it to the display only if it changed.
 <p align="center"><sub>Fourteen minutes, one frame per minute, from synthetic data in which every aircraft flies straight on.</sub></p>
 
 [How it works](docs/how-it-works.md) follows the data from transponder to pixel: the
-pipeline, the ranking, the radar, 1-bit rendering and how it keeps running for months.
+pipeline, the ranking, the runways in use, the route checks, the radar, 1-bit rendering
+and how it keeps running for months.
 
 <details>
 <summary><b>Every state of the display</b>: live, busy, quiet, no data, waiting for data, empty sky</summary>
@@ -187,8 +198,8 @@ another city or airport, a different radar range and tuning the ranking.
 | [Raspberry Pi setup](docs/raspberry-pi.md) | From a blank microSD card to a running service, updates and hand-over. |
 | [Configuration](docs/configuration.md) | Every setting with its default, and recipes. |
 | [Troubleshooting](docs/troubleshooting.md) | What the log and the display are telling you, and how to fix it. |
-| [How it works](docs/how-it-works.md) | Pipeline, ranking, radar, 1-bit rendering and reliability. |
-| [Data sources](docs/data-sources.md) | adsb.fi and adsb.lol: terms, rate limits, what is sent, privacy. |
+| [How it works](docs/how-it-works.md) | Pipeline, ranking, runways in use, route checks, weather, radar, 1-bit rendering and reliability. |
+| [Data sources](docs/data-sources.md) | adsb.fi, adsb.lol, aviationweather.gov, the VRS routes and OurAirports: terms, rate limits, what is sent, privacy. |
 | [Development](docs/development.md) | Setup, project layout, previews, snapshots, tests and CI. |
 | [Roadmap](ROADMAP.md) | What is left for v1, and ideas beyond it. |
 | [Contributing](CONTRIBUTING.md) | How to propose a change. |
@@ -202,10 +213,12 @@ non-commercial use, attribution required) and, as a fallback, from
 the reports of receivers run by volunteers. The display's footer names the source of the
 data on screen.
 
-ADS-B carries no flight plan, so Zurich Air shows no routes or destinations. `ARR` and
-`DEP` are inferred from how an aircraft moves near the airport, and only when that is
-clear. If you build one, you are responsible for following each provider's current terms;
-see [Data sources](docs/data-sources.md).
+ADS-B carries no flight plan: routes come from the Virtual Radar Server
+[standing data](https://github.com/vradarserver/standing-data) (CC0), verified against what
+the aircraft is seen doing, never guessed. The weather is the airport's METAR from
+[aviationweather.gov](https://aviationweather.gov) (public domain); airports and runways
+come from [OurAirports](https://ourairports.com/) (public domain). If you build one, you
+are responsible for following each provider's current terms: [Data sources](docs/data-sources.md).
 
 ## Project status
 
@@ -217,6 +230,7 @@ v1 is due by Christmas 2026.
 - [x] Raspberry Pi installer, systemd service and setup guide
 - [x] Reliability: watchdog, quiet hours, outage handling, `zurich-air doctor`
 - [x] Documentation
+- [x] From v2: the airport line and verified routes (pending verification on the device)
 - [ ] E-paper backend, once the panel has been inspected (Milestone 6)
 - [ ] Verification on the device: watchdog, boot with and without network, render time
 - [ ] The frame (Milestone 8)
@@ -242,7 +256,10 @@ Airbus for cockpit displays, is © 2012 The B612 Project Authors and licensed un
 
 - [adsb.fi](https://adsb.fi) and [adsb.lol](https://adsb.lol), for open flight data.
 - The volunteers who run ADS-B receivers and share what they hear.
+- The [standing data](https://github.com/vradarserver/standing-data) of Virtual Radar
+  Server by vradarserver and its contributors, for the routes (CC0).
+- [aviationweather.gov](https://aviationweather.gov) of the US National Weather Service
+  (NOAA), for the METARs (public domain; no endorsement by the NWS is implied).
+- [OurAirports](https://ourairports.com/), for the airports and runways (public domain).
 - The [B612](https://github.com/polarsys/b612) project, for a typeface made to be read at
-  a glance.
-- [OurAirports](https://ourairports.com/), for the runway coordinates (public domain), and
-  [Pillow](https://python-pillow.org/), which draws every pixel.
+  a glance, and [Pillow](https://python-pillow.org/), which draws every pixel.

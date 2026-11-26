@@ -48,8 +48,9 @@ cp config.example.toml config.toml
 uv run zurich-air once --config config.toml
 ```
 
-Relative paths in the file, such as `display.output_dir`, are relative to the working
-directory: the repository when you run it by hand, the install directory under systemd.
+Relative paths in the file, such as `display.output_dir` and `routes.cache_dir`, are
+relative to the working directory: the repository when you run it by hand, the install
+directory under systemd.
 
 ## Rules
 
@@ -86,7 +87,7 @@ runways in use and routes.
 | `icao` | `"LSZH"` | The airport's four-character ICAO code. Its runways in the bundled [OurAirports](https://ourairports.com/) data are what the runways in use are inferred from; it is the default METAR station (`weather.station`), and routes are checked against it. A code that is not in the bundled data turns the runways in use off, with a line in the log; `zurich-air doctor` reports it. |
 | `latitude` | `47.458056` | Airport reference point, degrees north. Distances for arrivals and departures are measured from here. |
 | `longitude` | `8.548056` | Airport reference point, degrees east. |
-| `elevation_ft` | `1416` | Field elevation in feet. A report slower than 5 kt and no more than 600 ft above it counts as on the ground; level flight up to 2000 ft above it can still count as an arrival. |
+| `elevation_ft` | `1416` | Field elevation in feet. A report slower than 5 kt and no more than 600 ft above it counts as on the ground; level flight up to 2000 ft above it can still count as an arrival. The runways in use are inferred from heights above it. |
 | `runways` | Zürich's three runways | Runway thresholds as `[lat1, lon1, lat2, lon2]`, one array per runway, drawn as a small glyph of the runway layout. Leave empty (`[]`) for a generic airport marker, a small ring at the reference point. The defaults come from [OurAirports](https://ourairports.com/) (public domain). |
 | `runways_in_use` | `true` | Infer the runways in use from the traffic and show them in the footer (`LDG 14 · DEP 28`). Uses the bundled runways of `icao`, not `runways`. |
 
@@ -179,7 +180,9 @@ their terms.
 ### `[weather]`
 
 The airport's weather in the footer (`270° 8 KT G18 · 4 °C · QNH 1018`), from its METAR
-at aviationweather.gov (US National Weather Service; no account needed).
+at aviationweather.gov (US National Weather Service; no account needed). See
+[How it works](how-it-works.md#weather) and
+[Data sources](data-sources.md#aviationweathergov-the-weather).
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -193,7 +196,11 @@ at aviationweather.gov (US National Weather Service; no account needed).
 Routes in the flight list (`DXB →`, `→ JFK`, `LHR → IST`), shown only when the aircraft is
 seen flying them. The route files of the airlines seen are downloaded on demand from the
 [Virtual Radar Server standing data](https://github.com/vradarserver/standing-data)
-(CC0) on GitHub, a few per update, and kept for a week; only the airline's code is sent.
+(CC0) on GitHub, at most two per update, and checked for changes once a week. Only the
+airline code is sent, with the first digit of the flight number for an airline without
+a single route file. See
+[How it works](how-it-works.md#routes-only-when-they-check-out) for the checks and
+[Troubleshooting](troubleshooting.md#clearing-the-route-cache) for clearing the cache.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

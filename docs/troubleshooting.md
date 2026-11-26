@@ -26,8 +26,9 @@ journalctl -u zurich-air -p warning
 ```
 
 - `zurich-air doctor` checks the configuration, time zone, clock, font rendering, display
-  backend, each data source (one test request each; add `--offline` to skip them) and the
-  service. It says which check failed and exits with a non-zero status if any did.
+  backend, the airport in the bundled airport data, the route cache, each data source and
+  the airport's weather report (one test request each; add `--offline` to skip them) and
+  the service. It says which check failed and exits with a non-zero status if any did.
 - `systemctl status` shows whether the service runs, and its last few log lines.
 - `journalctl -u zurich-air -e` opens the log at its end (arrow keys to scroll, `q` to
   quit). `-p warning` shows only warnings and errors.
@@ -349,6 +350,125 @@ To see what the flight list holds on a busy afternoon instead, add `--scene busy
 ranks invented Zürich traffic, marked `synthetic data` in the first line, and needs no
 network.
 
+### The airport line is empty or partly missing
+
+The left of the footer shows less than, say, `LDG 14 · DEP 28 · 270° 8 KT G18 · 4 °C ·
+QNH 1018`, or nothing at all.
+
+**Causes**, part by part:
+
+- **No `LDG` or `DEP`.** A runway appears only once an aircraft has been seen clearly
+  landing on it or taking off from it within the last 20 minutes. At night, with little
+  traffic, or in quiet hours, when Zurich Air looks only every 10 minutes and so catches
+  fewer aircraft on final, there may be none: not a fault. Without new traffic data no
+  runway use is seen either, so the runways drop out within 20 minutes of
+  `NO DATA SINCE`. If they never appear, check `airport.runways_in_use` in `config.toml`
+  and the `Airport` line of `zurich-air doctor`: an `airport.icao` that is not in the
+  bundled airport data turns them off, and the log says so at start
+  (`airport.icao ... is not in the bundled airport data: runways in use are not shown`).
+- **No weather.** `weather.enabled` is `false`; or the latest observation is older than
+  `weather.max_age_s` (90 minutes), because requests fail or the station has not reported;
+  or the station has no METAR at all (`no usable observation`, see
+  [below](#zurich-air-doctor-warns-about-the-airport-the-route-cache-or-the-weather)). A
+  failed request shows up in the log as `metar LSZH: <reason>; next try in 600 s`. The
+  METAR is asked for only every `weather.interval_s` (10 minutes), so after an outage the
+  weather can take that long to come back.
+- **The end of the line is missing** (QNH first, then the temperature). The line is
+  shortened from its end when it does not fit beside the data source, and
+  `NO DATA SINCE hh:mm` takes more room than `ADSB.FI`. A value missing from the METAR is
+  left out as well.
+
+**Fix.** Usually none. `zurich-air doctor` fetches the METAR once and says what came back.
+`zurich-air explain` prints the weather above its table; from its single fetch it sees a
+runway in use only if an aircraft happens to be on one at that moment, and otherwise says
+`runways in use at LSZH: none seen recently`. See
+[How it works](how-it-works.md#runways-in-use) for how runways are recognised.
+
+### A flight has no route
+
+Most rows show `ARR`, `DEP` or an arrow rather than a route such as `→ JFK`. That is by
+design whenever the route cannot be checked; it points to a problem only if no row ever
+shows one.
+
+**Causes:**
+
+- **Not an airline callsign.** Only a three-letter airline code with a flight number is
+  looked up. Private flights often use their registration instead (`HBCXB`).
+- **Not in the table.** The route table does not know every flight. On one morning's
+  measurement it had a route for 95% of the airline callsigns seen.
+- **Not verified.** The route does not fit what the aircraft is seen doing, or nothing
+  confirms it yet: a route through Zürich needs an observed arrival or departure, and an
+  aircraft passing over must be heading for the destination with the origin behind it.
+  `zurich-air explain` says why under the row, for example
+  `route LSZH-EGLL not shown: LSZH on the route but no arrival or departure observed`.
+- **Privacy.** Aircraft that opted out of tracking (LADD) or use a privacy address (PIA)
+  are never looked up.
+- **Not downloaded yet.** At most two route files are downloaded per update, for the
+  listed aircraft first. After a fresh install, or for an airline not seen before, a route
+  can take a few minutes to appear. A failed download is retried after a pause that grows
+  from 30 seconds to 5 minutes (after HTTP 429, as long as GitHub asks), with a line such
+  as `routes: timed out; next try in 30 s` in the log.
+- **The cache is not writable.** Then every download fails, with
+  `routes: [Errno 13] Permission denied: ...` in the log, and the `Route cache` line of
+  `zurich-air doctor` warns.
+- **Routes are off** (`routes.enabled = false`), or **no new data** is arriving: while the
+  footer says `NO DATA SINCE`, only routes verified earlier are shown.
+
+**Fix.** `zurich-air explain` shows, for every aircraft, its route or why it has none:
+
+```sh
+cd ~/zurich-air && .venv/bin/zurich-air explain --config config.toml
+```
+
+If the cache is not writable, perhaps because a command run with `sudo` created it, give
+it back to your user with `sudo chown -R <user>: ~/zurich-air/cache`, or point
+`routes.cache_dir` at a directory you can write to.
+
+### Clearing the route cache
+
+The route files are kept in `~/zurich-air/cache/routes` (`routes.cache_dir`) and checked
+for changes once a week. To start afresh, for example to pick up a correction in the
+table sooner:
+
+```sh
+sudo systemctl stop zurich-air
+rm -r ~/zurich-air/cache/routes
+sudo systemctl start zurich-air
+```
+
+The files are downloaded again as their airlines are seen, at most two per update. If you
+changed `routes.cache_dir`, delete that directory instead.
+
+### `zurich-air doctor` warns about the airport, the route cache or the weather
+
+None of these stops the display; each only means that part of it stays empty. In a fresh
+checkout, `zurich-air doctor --offline` with the built-in defaults shows, among its other
+lines (path shortened):
+
+```text
+OK    Airport          LSZH Zürich Airport, 3 runways
+OK    Route cache      .../zurich-air/cache/routes (created on the first download)
+SKIP  Source adsb.fi   --offline
+SKIP  Source adsb.lol  --offline
+SKIP  Weather          --offline
+```
+
+Without `--offline`, the `Weather` line fetches the METAR once and shows it, for example
+`METAR LSZH from 12 min ago in 310 ms: 270° 8 KT G18 · 4 °C · QNH 1018`. The warnings:
+
+| Line | Meaning | Fix |
+| --- | --- | --- |
+| `Airport  XXXX is not in the bundled airport data: runways in use are not shown` | `airport.icao` is misspelt, or the airport is not among the larger airports with scheduled service that are bundled. | Set `airport.icao` to the airport's four-letter ICAO code. A small airfield has no runways in use on the display. |
+| `Airport  ..., but 87 km from airport.latitude/longitude` | The code and the position describe different airports (more than 5 km apart). | Correct one or the other; see [Configuration](configuration.md#use-it-for-another-city-or-airport). |
+| `Airport  ...: runways in use are not shown` | The bundled data has no runways for this airport. | None; or set `airport.runways_in_use = false`. |
+| `Route cache  cannot write to ...: no routes are shown` | The directory in `routes.cache_dir`, or the nearest existing one above it, is not writable. | As in [A flight has no route](#a-flight-has-no-route). |
+| `Weather  METAR XXXX: no usable observation` | aviationweather.gov has no METAR for this station. | `XXXX` may not issue METARs: set `weather.station` to a station that does. |
+| `Weather  METAR LSZH: timed out` (or another reason) | The request failed. | Check the internet connection: `ping -c 3 aviationweather.gov`. |
+| `Weather  ...; too old to show` | The newest observation is older than `weather.max_age_s`. | The station may not report at all hours: set `weather.station` to one that does. |
+
+`SKIP  Route cache  routes.enabled = false` and `SKIP  Weather  weather.enabled = false`
+mean the feature is turned off in the configuration.
+
 ### The log shows "HTTP 429 rate limited"
 
 For example `adsb.fi: HTTP 429 rate limited; next try in 600 s`.
@@ -362,7 +482,9 @@ without an API key allows 500 requests per day per IP address.
 
 **What Zurich Air does.** It pauses that source for as long as the service asks (its
 `Retry-After` header), or 10 minutes if it does not say, and uses the next source in
-`provider.sources` meanwhile.
+`provider.sources` meanwhile. The same can happen with GitHub for the route files
+(`routes: HTTP 429 rate limited; next try in ...`): then only new routes wait, and the
+traffic carries on.
 
 **Fix.** Usually just wait. Do not lower `update.interval_s` below 60 seconds. Use
 `zurich-air doctor --offline` when you run it repeatedly. If you have an adsb.lol API key,
@@ -473,7 +595,8 @@ does the service. Until the Wi-Fi is up and the clock is set it shows
 
 **The SD card.** Unplugging a running Pi can, rarely, damage the file system on the card,
 as on any computer. Zurich Air keeps writes small (one small image per change in mock
-mode, plus the system log), but cannot rule it out. To reduce the risk:
+mode, a route file now and then, plus the system log), but cannot rule it out. To reduce
+the risk:
 
 - Use a good card (A1 class, reputable brand; "endurance" cards are made for constant
   use) and a proper 5 V, 2.5 A supply.

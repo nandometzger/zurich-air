@@ -90,43 +90,48 @@ Small improvements once v1 hangs on a wall. Ideas, not commitments.
 
 The second version tells a little more, without asking more of whoever glances at it: the
 weather and the runways in use, and where a flight is going whenever that can be checked.
-And it becomes easy to set up for another city. **Target:** parts 1 and 2 before Christmas
-if time allows, once the e-paper backend works; part 3 afterwards.
+And it becomes easy to set up for another city. **Status:** parts 1 and 2 are implemented
+and run in mock mode, pending verification on the device; part 3 follows.
 
 ### 1. Airport and weather line
 
-One line with the weather at Zürich Airport and the runways in use.
+**Implemented**, pending verification on the device. One line in the footer with the
+runways in use and the weather at the airport: `LDG 14 · DEP 28 · 270° 8 KT G18 · 4 °C ·
+QNH 1018`.
 
-- **Weather.** The METAR for LSZH from [aviationweather.gov](https://aviationweather.gov),
-  which is free and needs no key, polled far less often than the traffic: wind,
-  temperature and QNH. *Needs:* room in the layout, and the same honesty about stale data
-  as the radar.
-- **Runways in use**, inferred from the aircraft actually seen landing and taking off:
-  match the tracks of `ARR` and `DEP` aircraft close to the airport with the runway
-  directions in `airport.runways`, and show a runway only when several movements agree.
+- [x] **Weather.** The METAR for `airport.icao` (LSZH) from
+  [aviationweather.gov](https://aviationweather.gov), which is free and needs no key,
+  fetched every 10 minutes: wind, temperature and QNH. An observation older than 90
+  minutes is not shown, as honest about stale data as the radar.
+- [x] **Runways in use**, inferred from the aircraft actually seen landing and taking off:
+  aircraft lined up with a runway of `airport.icao` in the bundled OurAirports data, over
+  the last 20 minutes. See [How it works](docs/how-it-works.md#runways-in-use).
 
 ### 2. Destinations, only when they check out
 
-ADS-B carries no flight plan, which is why Zurich Air shows no routes today (see
-[Data sources](docs/data-sources.md#why-there-are-no-routes-or-destinations)). v2 adds an
-offline route table from the [standing data](https://github.com/vradarserver/standing-data)
-of Virtual Radar Server (CC0), which maps callsigns to routes, and shows a route only when
-it agrees with what the aircraft is observed doing:
+**Implemented**, pending verification on the device. ADS-B carries no flight plan, so
+routes come from an offline table, the
+[standing data](https://github.com/vradarserver/standing-data) of Virtual Radar Server
+(CC0), downloaded one airline at a time, cached and checked for changes weekly. A route is
+shown only when it agrees with what the aircraft is observed doing (see
+[Data sources](docs/data-sources.md#routes-checked-never-guessed)):
 
-- an aircraft seen departing (`DEP`) must be on a route that starts at ZRH, one seen
+- [x] an aircraft seen departing (`DEP`) must be on a route that starts at ZRH, one seen
   arriving (`ARR`) on a route that ends there;
-- an aircraft passing over must be heading for its destination and have made progress
-  from its origin.
+- [x] an aircraft passing over must be heading for its destination, have made progress
+  from its origin, which lies behind it, and fly no implausible detour;
+- [x] a verified route stays with the aircraft until it has been off the radar for 5
+  minutes or changes callsign.
 
-Anything else shows no destination, as today.
+Anything else shows no destination.
 
-- **Measured** on live traffic around Zürich: the table knows a route for 82% of the
-  airline callsigns seen, and 45 of the 49 routes that could be checked passed.
+- **Measured** once, on live morning traffic around Zürich: the table had a route for 95%
+  of the airline callsigns seen; 12 of 12 arrivals, 6 of 6 departures and 13 of 17
+  overflights were verified, and wrong routes were rejected (see
+  [How it works](docs/how-it-works.md#routes-only-when-they-check-out)).
 - **The remaining risk:** the far end of a route lies well beyond the 60 km the display
   sees and cannot be checked. A flight that keeps its callsign but no longer goes where the
   table says would still pass.
-- *Needs:* room in the flight list for a destination code, and a refresh of the table now
-  and then, since airlines change their schedules every season.
 
 ### 3. Any airport, and easy setup
 
@@ -134,10 +139,11 @@ Making Zurich Air easy to build for any city.
 
 - **Any airport from its ICAO code.** [OurAirports](https://ourairports.com/) data (public
   domain, where the Zürich defaults come from) is now bundled: some 3,300 larger airports
-  with scheduled service and their runways, about 210 kB, read by `data/airports.py`. The
-  airport's position, elevation and runway layout can then follow from its code instead
-  of being typed by hand. *Needs:* a config key for it, because `airport.code` is only the
-  label on the radar, and operator names for other regions in `data/reference.py`.
+  with scheduled service and their runways, about 210 kB, read by `data/airports.py`.
+  `airport.icao` already picks the runways for the runways in use, the METAR station and
+  the airport the routes are checked against. The airport's position, elevation and runway
+  layout could follow from it too, instead of being typed by hand. *Needs:* operator names
+  for other regions in `data/reference.py`.
 - **A one-line installer.** One command on a fresh Raspberry Pi OS instead of the three in
   the [Pi guide](docs/raspberry-pi.md#5-install-zurich-air); Wi-Fi and the user are still
   set with Raspberry Pi Imager. *Needs:* `install-pi.sh` to fetch the repository itself
