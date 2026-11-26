@@ -204,6 +204,16 @@ def test_failures_return_none_and_log_one_warning(failure, reason, caplog):
     assert record.exc_info is None
     assert src.failures == 1
     assert src.latest is None
+    assert reason in src.last_error
+
+
+def test_last_error_clears_once_a_request_works():
+    src = source(FakeOpener(http_error(500), FakeResponse(body("normal"))))
+    assert src.last_error is None
+    src.fetch()
+    assert src.last_error == "HTTP 500"
+    src.fetch()
+    assert src.last_error is None
 
 
 def test_weather_fetches_at_most_every_interval():

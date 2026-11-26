@@ -12,8 +12,10 @@ from zurich_air import cli
 from zurich_air.cli import configure_logging, main, snapshot_scene
 from zurich_air.config import Config
 from zurich_air.data import synthetic
+from zurich_air.data.metar import Weather
 from zurich_air.data.provider import ProviderError
 from zurich_air.data.readsb import parse_snapshot
+from zurich_air.data.routes import Route
 
 
 def test_preview_writes_native_and_scaled_png(tmp_path):
@@ -107,8 +109,10 @@ class FakeProvider:
 
 @pytest.fixture(autouse=True)
 def no_extras(monkeypatch):
-    """once and run without weather, runway or route sources (and so no route cache)."""
+    """once, run and explain without METAR or route sources (and so no route cache)."""
     monkeypatch.setattr(cli.Extras, "from_config", classmethod(lambda cls, config: cls(config)))
+    monkeypatch.setattr(cli, "build_metar", lambda config: None)
+    monkeypatch.setattr(cli, "build_route_table", lambda config, fetch=True: None)
 
 
 def test_once_shows_a_frame_and_saves_the_response(tmp_path, monkeypatch):
@@ -287,3 +291,86 @@ def test_explain_rejects_unknown_scene():
     with pytest.raises(SystemExit) as exc:
         main(["explain", "--scene", "rush-hour"])
     assert exc.value.code == 2
+
+
+def table_lines(out: str) -> dict[str, str]:
+    """The rows of an explain table by flight, with any line under a row appended."""
+    rows: dict[str, str] = {}
+    last = None
+    for line in out.splitlines():
+        words = line.split()
+        if len(words) > 2 and words[0].isdigit():
+            last = words[1]
+            rows[last] = line
+        elif last and line.startswith(" " * 15) and "route" in line:
+            rows[last] += "\n" + line
+    return rows
+
+
+def test_explain_scene_shows_runways_weather_and_routes(capsys):
+    assert main(["explain", "--scene", "typical"]) == 0
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+    assert lines[1] == "runways in use at LSZH: LDG 14 · DEP 28"
+    assert lines[2] == "weather at LSZH, observed 15:20: 270° 8 KT G18 · 4 °C · QNH 1018"
+    header = next(line for line in lines if "REASONS" in line)
+    assert "  ROUTE  " in header
+    rows = table_lines(out)
+    assert "ARR    DXB →" in rows["UAE87"]
+    assert "DEP    → JFK" in rows["SWR8"]
+    assert "LHR → IST" in rows["THY7HJ"]  # verified, though not in the list
+    assert "  -  " in rows["SAZ3"] and "\n" not in rows["SAZ3"]  # no schedule: no note
+    assert rows["BAW8KN"].endswith(
+        "route LSZH-EGLL not shown: LSZH on the route but no arrival or departure observed"
+    )
+    assert "route EGSS-LIRA not shown: EGSS-LIRA: track 71 deg off LIRA" in rows["RYR4TR"]
+
+
+def test_explain_degraded_scene_has_no_airport_lines_or_routes(capsys):
+    assert main(["explain", "--scene", "degraded"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[1] == ""  # straight to the table
+    assert not any("→" in line for line in lines)
+
+
+class FakeTable:
+    def __init__(self) -> None:
+        self.looked_up = []
+
+    def lookup(self, callsign):
+        self.looked_up.append(callsign)
+        return (
+            Route("SWR1", ("LSGG", "LSZH")) if callsign and callsign.strip() == "SWR001" else None
+        )
+
+
+def test_explain_snapshot_uses_cached_routes_only(monkeypatch, capsys):
+    table, fetching = FakeTable(), []
+
+    def build(config, fetch=True):
+        fetching.append(fetch)
+        return table
+
+    monkeypatch.setattr(cli, "build_route_table", build)
+    monkeypatch.setattr(cli, "build_metar", lambda config: pytest.fail("no METAR for old data"))
+    assert main(["explain", "--snapshot", str(FIXTURE)]) == 0
+    out = capsys.readouterr().out
+    assert fetching == [False]
+    assert "ARR    GVA →" in table_lines(out)["SWR001"]
+    assert "runways in use at LSZH: " in out and "weather at" not in out
+
+
+def test_explain_live_fetches_the_weather(monkeypatch, capsys):
+    observed = datetime(2026, 12, 24, 14, 20, tzinfo=UTC)
+    weather = Weather("LSZH", observed, None, True, 3, None, -1, -4, 1025, "METAR LSZH ...")
+
+    class Metar:
+        def weather(self):
+            return weather
+
+    monkeypatch.setattr(cli, "build_provider", lambda config: FakeProvider())
+    monkeypatch.setattr(cli, "build_metar", lambda config: Metar())
+    assert main(["explain"]) == 0
+    out = capsys.readouterr().out
+    assert "weather at LSZH, observed 15:20: VRB 3 KT · \N{MINUS SIGN}1 °C · QNH 1025\n" in out
+    assert "\n  METAR LSZH ...\n" in out

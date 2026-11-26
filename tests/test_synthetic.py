@@ -6,7 +6,10 @@ import pytest
 from zurich_air.cli import preview_scene
 from zurich_air.config import Config
 from zurich_air.data import synthetic
+from zurich_air.extras import verified_routes
 from zurich_air.processing.geo import distance_km
+from zurich_air.processing.runways import RunwayUse
+from zurich_air.rendering import formatting
 
 CONFIG = Config()
 CENTRE = (CONFIG.location.latitude, CONFIG.location.longitude)
@@ -89,3 +92,56 @@ def test_typical_scene_features_arrivals_departures_and_more():
     assert phases.count("arrival") >= 2
     assert phases.count("departure") >= 2
     assert None in phases  # something that is neither, e.g. the Rega helicopter
+
+
+def labels(scene) -> dict[str, str]:
+    """Flight label -> the route label shown in its row."""
+    return {
+        a.label: formatting.route_label(scene.routes[a.icao])
+        for a in scene.featured
+        if a.icao in scene.routes
+    }
+
+
+def test_previews_show_verified_routes():
+    typical = preview_scene("typical", CONFIG)
+    assert labels(typical) == {
+        "UAE87": "DXB →",
+        "SWR8": "→ JFK",
+        "EDW24": "→ PUJ",
+        "SWR93D": "LHR →",
+    }
+    assert labels(preview_scene("quiet", CONFIG)) == {"SWR1325": "MAD →", "THY7HJ": "LHR → IST"}
+    assert set(labels(preview_scene("busy", CONFIG))) >= {"SWR18L", "UAE87"}
+    assert labels(preview_scene("stale", CONFIG)) == labels(typical)
+    assert labels(preview_scene("degraded", CONFIG)) == {}
+
+
+def test_previews_carry_weather_and_runways():
+    typical = preview_scene("typical", CONFIG)
+    assert typical.weather is not None and typical.weather.qnh_hpa == 1018
+    assert typical.runways == RunwayUse(("14",), ("28",))
+    waiting_for_traffic = preview_scene("stale", CONFIG)
+    assert waiting_for_traffic.weather == typical.weather  # the METAR is fresh all the same
+    empty = preview_scene("empty", CONFIG)
+    assert empty.weather is not None and empty.weather.calm and empty.runways is None
+    degraded = preview_scene("degraded", CONFIG)
+    assert degraded.weather is None and degraded.runways is None
+
+
+def test_some_scheduled_routes_are_rejected():
+    data = synthetic.scene("typical")
+    routes = verified_routes(data.snapshot.aircraft, data.route, CONFIG)
+    by_label = {a.label: a.icao for a in data.snapshot.aircraft}
+    assert data.route("BAW8KN") is not None and by_label["BAW8KN"] not in routes
+    assert data.route("RYR4TR") is not None and by_label["RYR4TR"] not in routes
+    assert data.route("SAZ3") is None and data.route(None) is None
+    assert data.route("SWR0008") == data.route("SWR8")  # normalised, as in the VRS data
+
+
+def test_synthetic_weather_is_recent():
+    for name in synthetic.SCENE_NAMES:
+        data = synthetic.scene(name)
+        if data.weather is not None:
+            assert 0 < data.weather.age_s(data.now) <= CONFIG.weather.max_age_s
+            assert data.weather.raw == ""  # never passed off as a real METAR

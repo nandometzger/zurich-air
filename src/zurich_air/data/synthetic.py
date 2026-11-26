@@ -9,18 +9,28 @@ overflights spread across the sky, a Rega helicopter. Every flight is invented, 
 like the real thing: callsigns are real airline ICAO prefixes with the numeric or
 alphanumeric flight numbers airlines use on the radio (SWR8, EDW24, DLH5LU, EZS14QA, …),
 and registrations follow an ``HB-?X?`` pattern.
+
+Each scene also has invented airport conditions: a METAR, the runways in use and a small
+route table (callsign → airports, like the VRS standing data). The routes go through the
+real verification (processing/route_check.py), so a preview shows only those a live
+display would; a few are deliberately wrong and rejected, for ``explain --scene``. The
+degraded scene has none of it, as when every extra source is down.
 """
 
 from __future__ import annotations
 
 import random
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from zurich_air.config import ZRH_RUNWAYS, Config
 from zurich_air.data.aircraft import Aircraft, TrafficSnapshot
+from zurich_air.data.metar import Weather
+from zurich_air.data.routes import Route, normalise_callsign
 from zurich_air.processing.geo import KM_PER_NM, destination
+from zurich_air.processing.runways import RunwayUse
 
 TIMESTAMP = datetime(2026, 12, 24, 15, 42, tzinfo=ZoneInfo("Europe/Zurich"))
 SCENE_NAMES = ("typical", "busy", "quiet", "empty", "degraded", "stale")
@@ -43,6 +53,15 @@ class SyntheticScene:
     snapshot: TrafficSnapshot
     trails: dict[str, tuple[tuple[float, float], ...]]
     now: datetime  # wall-clock time of the render; later than the data for "stale"
+    weather: Weather | None = None  # the airport's METAR
+    runways: RunwayUse | None = None  # as the runway inference would have seen them
+    routes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)  # callsign -> ICAO
+
+    def route(self, callsign: str | None) -> Route | None:
+        """The scheduled route of *callsign*, as ``RouteTable.lookup`` would return it."""
+        key = normalise_callsign(callsign)
+        airports = self.routes.get(key) if key else None
+        return Route(key, airports) if key and airports else None
 
 
 @dataclass(frozen=True)
@@ -175,23 +194,73 @@ _DEGRADED = (
 )  # fmt: skip
 
 
+# Airport conditions. The METAR was observed at :20, 22 minutes before TIMESTAMP.
+OBSERVED = datetime(2026, 12, 24, 14, 20, tzinfo=UTC)
+
+
+def _metar(
+    direction: int | None, speed: int, gust: int | None, temperature: int, qnh: int
+) -> Weather:
+    """An invented observation at LSZH; *direction* None means variable (or calm)."""
+    return Weather(
+        station="LSZH",
+        observed_at=OBSERVED,
+        wind_dir_deg=direction,
+        wind_variable=direction is None and speed > 0,
+        wind_speed_kt=speed,
+        gust_kt=gust,
+        temperature_c=temperature,
+        dewpoint_c=temperature - 3,
+        qnh_hpa=qnh,
+        raw="",  # not a real METAR
+    )
+
+
+_WESTERLY = _metar(270, 8, 18, 4, 1018)  # the usual concept: land 14, take off 28 and 16
+_GUSTY = _metar(250, 14, 26, -2, 1009)
+_STILL = _metar(None, 0, None, -3, 1031)  # a cold, calm high
+# Callsign -> airports in the order flown. Most agree with what the aircraft does; BAW8KN
+# (the return flight's route) and RYR4TR (heading elsewhere) are rejected by the check.
+_ROUTES: dict[str, tuple[str, ...]] = {
+    "UAE87": ("OMDB", "LSZH"),
+    "SWR93D": ("EGLL", "LSZH"),
+    "SWR1325": ("LEMD", "LSZH"),
+    "SWR8": ("LSZH", "KJFK"),
+    "EDW24": ("LSZH", "MDPC"),
+    "SWR18L": ("LSZH", "LGAV"),
+    "OAW726": ("LSZH", "LEPA"),
+    "THY7HJ": ("EGLL", "LTFM"),
+    "QTR4CY": ("EGLL", "OTHH"),
+    "ETD19": ("LFPG", "OMAA"),
+    "BAW8KN": ("LSZH", "EGLL"),
+    "RYR4TR": ("EGSS", "LIRA"),
+}
+
+
 def scene(name: str) -> SyntheticScene:
     """Build the synthetic scene *name* (one of :data:`SCENE_NAMES`)."""
     now = TIMESTAMP
     timestamp = TIMESTAMP
+    weather: Weather | None = _WESTERLY
+    runways: RunwayUse | None = RunwayUse(("14",), ("28",))
+    routes: Mapping[str, tuple[str, ...]] = _ROUTES
     if name == "typical":
         flights = _TYPICAL
     elif name == "busy":
         flights = _TYPICAL + _BUSY_EXTRA + _busy_overflights()
+        weather, runways = _GUSTY, RunwayUse(("14",), ("16", "28"))
     elif name == "quiet":
         flights = _QUIET
+        weather, runways = _STILL, RunwayUse(("14",))
     elif name == "empty":
         flights = ()
+        weather, runways = _STILL, None  # nobody to tell which runways are in use
     elif name == "degraded":
         flights = _DEGRADED
+        weather, runways, routes = None, None, {}  # no METAR, no evidence, no route data
     elif name == "stale":
         flights = _TYPICAL
-        timestamp = TIMESTAMP - timedelta(minutes=11)
+        timestamp = TIMESTAMP - timedelta(minutes=11)  # weather still fresh; runways recent
     else:
         raise ValueError(f"unknown scene {name!r}; choose from {', '.join(SCENE_NAMES)}")
 
@@ -223,7 +292,15 @@ def scene(name: str) -> SyntheticScene:
         source="synthetic data",  # shown as the attribution in the footer
         total_reported=len(aircraft),
     )
-    return SyntheticScene(name=name, snapshot=snapshot, trails=trails, now=now)
+    return SyntheticScene(
+        name=name,
+        snapshot=snapshot,
+        trails=trails,
+        now=now,
+        weather=weather,
+        runways=runways,
+        routes=routes,
+    )
 
 
 def _trail(lat: float, lon: float, flight: _Flight) -> tuple[tuple[float, float], ...]:

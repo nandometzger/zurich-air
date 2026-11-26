@@ -121,7 +121,7 @@ def drawn_texts(monkeypatch, scene, config=CONFIG):
 
 
 def test_flight_list_labels_arrivals_and_departures(monkeypatch):
-    scene = preview_scene("typical", CONFIG)
+    scene = dataclasses.replace(preview_scene("typical", CONFIG), routes={})  # no route known
     texts = drawn_texts(monkeypatch, scene)
     phases = [scene.phases.get(a.icao) for a in scene.featured]
     labels = [t for t in texts if t in ("ARR", "DEP")]
@@ -134,7 +134,8 @@ def test_flight_list_labels_arrivals_and_departures(monkeypatch):
 def test_second_line_shortens_by_meaning_never_with_an_ellipsis(monkeypatch):
     scene = preview_scene("typical", CONFIG)
     texts = drawn_texts(monkeypatch, scene)
-    assert "Swiss · 777" in texts  # 777-300ER does not fit beside DEP
+    assert "→ JFK" in texts
+    assert "Swiss · 777" in texts  # 777-300ER does not fit beside the route
     assert not any(ELLIPSIS in t for t in texts)
 
 

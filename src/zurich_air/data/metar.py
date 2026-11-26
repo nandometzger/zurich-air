@@ -143,6 +143,7 @@ class MetarSource:
         self._last_attempt: float | None = None
         self.latest: Weather | None = None  # newest observation received, however old
         self.failures = 0  # failed requests since start
+        self.last_error: str | None = None  # why the last request failed; None if it worked
 
     def __repr__(self) -> str:
         return f"MetarSource({self.station!r})"
@@ -171,6 +172,7 @@ class MetarSource:
             return self._failed(failure_reason(exc))
         if weather is None:
             return self._failed("no usable observation")
+        self.last_error = None
         if self.latest is None or weather.observed_at >= self.latest.observed_at:
             self.latest = weather
         log.debug("metar %s: %s", self.station, weather.raw)
@@ -191,6 +193,7 @@ class MetarSource:
 
     def _failed(self, reason: str) -> None:
         self.failures += 1
+        self.last_error = reason
         log.warning("metar %s: %s; next try in %.0f s", self.station, reason, self.interval_s)
         return None
 

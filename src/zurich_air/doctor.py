@@ -34,10 +34,15 @@ from zoneinfo import ZoneInfo
 from zurich_air import __version__, schedule
 from zurich_air.app import FETCH_MARGIN_KM
 from zurich_air.config import Config, ConfigError, load_config
-from zurich_air.data import provider
+from zurich_air.data import metar, provider
+from zurich_air.data.airports import lookup
+from zurich_air.data.metar import METAR_URL, MetarSource
 from zurich_air.data.provider import PRESETS, ProviderError, make_source
 from zurich_air.display import AVAILABLE_BACKENDS
+from zurich_air.extras import WEATHER_TIMEOUT_S
 from zurich_air.pipeline import build_scene
+from zurich_air.processing.geo import distance_km
+from zurich_air.rendering import formatting
 from zurich_air.rendering.renderer import Renderer
 
 Status = Literal["OK", "WARN", "FAIL", "SKIP"]
@@ -53,6 +58,7 @@ HARDWARE_PACKAGES = ("python3-spidev", "python3-lgpio", "python3-gpiozero")
 SYSTEMCTL_TIMEOUT_S = 10.0
 
 NEEDS_CONFIG = "needs a valid config"
+AIRPORT_MISMATCH_KM = 5.0  # airport.icao and the configured position disagree beyond this
 REPORT_HINT = "reinstall, or report it with this output: github.com/nandometzger/zurich-air/issues"
 
 Timer = Callable[[], float]  # seconds, for measuring durations
@@ -81,11 +87,16 @@ def run_checks(
     results += check_display(config) if config else [skipped("Display", NEEDS_CONFIG)]
 
     if config is None:
-        results.append(skipped("Data sources", NEEDS_CONFIG))
-    elif offline:
-        results += [skipped(source_name(s), "--offline") for s in config.provider.sources]
+        names = ("Airport", "Route cache", "Data sources", "Weather")
+        results += [skipped(name, NEEDS_CONFIG) for name in names]
     else:
-        results += check_sources(config)
+        results += [check_airport(config), check_route_cache(config)]
+        if offline:
+            results += [skipped(source_name(s), "--offline") for s in config.provider.sources]
+            results.append(skipped("Weather", "--offline"))
+        else:
+            results += check_sources(config)
+            results.append(check_weather(config, now))
     results.append(check_service())
     return results
 
@@ -197,15 +208,73 @@ def check_display(
 
 def _check_output_dir(path: Path, access: Callable[[Path, int], bool]) -> CheckResult:
     target = path.absolute()  # like the app: relative to the working directory
-    existing = next(p for p in (target, *target.parents) if p.exists())
     hint = "set display.output_dir to a directory you can write to, such as previews"
-    if not existing.is_dir():
-        return CheckResult("Display", "FAIL", f"mock: {existing} is not a directory", hint)
-    if not access(existing, os.W_OK | os.X_OK):
-        return CheckResult("Display", "FAIL", f"mock: cannot write to {existing}", hint)
-    if existing == target:
+    problem = _unwritable(target, access)
+    if problem:
+        return CheckResult("Display", "FAIL", f"mock: {problem}", hint)
+    if target.is_dir():
         return CheckResult("Display", "OK", f"mock: latest.png in {target}")
     return CheckResult("Display", "OK", f"mock: latest.png in {target} (created on first frame)")
+
+
+def _unwritable(target: Path, access: Callable[[Path, int], bool]) -> str | None:
+    """Why the directory *target* cannot be written to (or created), or None if it can."""
+    existing = next(p for p in (target, *target.parents) if p.exists())
+    if not existing.is_dir():
+        return f"{existing} is not a directory"
+    if not access(existing, os.W_OK | os.X_OK):
+        return f"cannot write to {existing}"
+    return None
+
+
+def check_airport(config: Config) -> CheckResult:
+    """``airport.icao`` is in the bundled airport data, near the configured position.
+
+    The bundled runways are what the runways in use are inferred from.
+    """
+    airport = config.airport
+    icao = airport.icao.upper()
+    bundled = lookup(icao)
+    if bundled is None:
+        return CheckResult(
+            "Airport",
+            "WARN",
+            f"{icao} is not in the bundled airport data: runways in use are not shown",
+            "set airport.icao to the airport's four-letter ICAO code, such as LSZH",
+        )
+    detail = f"{icao} {bundled.name}, {_count(len(bundled.runways), 'runway')}"
+    off_km = distance_km(airport.latitude, airport.longitude, bundled.lat, bundled.lon)
+    if off_km > AIRPORT_MISMATCH_KM:
+        return CheckResult(
+            "Airport",
+            "WARN",
+            f"{detail}, but {off_km:.0f} km from airport.latitude/longitude",
+            "airport.icao and the airport's position must describe the same airport",
+        )
+    if airport.runways_in_use and not bundled.runways:
+        return CheckResult("Airport", "WARN", f"{detail}: runways in use are not shown")
+    return CheckResult("Airport", "OK", detail)
+
+
+def check_route_cache(
+    config: Config, *, access: Callable[[Path, int], bool] = os.access
+) -> CheckResult:
+    """The route files can be stored in ``routes.cache_dir``; how many are there."""
+    if not config.routes.enabled:
+        return skipped("Route cache", "routes.enabled = false")
+    target = Path(config.routes.cache_dir).absolute()  # relative to the working directory
+    problem = _unwritable(target, access)
+    if problem:
+        return CheckResult(
+            "Route cache",
+            "WARN",
+            f"{problem}: no routes are shown",
+            "set routes.cache_dir to a directory you can write to, such as cache/routes",
+        )
+    if not target.is_dir():
+        return CheckResult("Route cache", "OK", f"{target} (created on the first download)")
+    files = sum(1 for _ in target.glob("*.csv"))
+    return CheckResult("Route cache", "OK", f"{target}, {files} airline files")
 
 
 def check_spi(device: Path = SPI_DEVICE) -> CheckResult:
@@ -302,6 +371,39 @@ def _source_result(
         host = urllib.parse.urlsplit(preset.url_template).hostname
         hint = f"check the internet connection: ping -c 3 {host}"
     return CheckResult(source_name(name), "WARN" if any_data else "FAIL", reason + key, hint)
+
+
+def check_weather(
+    config: Config,
+    now: datetime,
+    *,
+    opener: provider.Opener = urllib.request.urlopen,
+    timer: Timer = time.monotonic,
+) -> CheckResult:
+    """Fetch the METAR once, as the app would, and time it. Without it the display only
+    lacks the weather, so a failure is a warning."""
+    if not config.weather.enabled:
+        return skipped("Weather", "weather.enabled = false")
+    station = config.weather_station
+    source = MetarSource(station, timeout_s=WEATHER_TIMEOUT_S, opener=opener, clock=timer)
+    start = timer()
+    with _quiet(metar.log):  # its warning would repeat the result
+        observation = source.fetch()
+    elapsed_ms = (timer() - start) * 1000
+    if observation is None:
+        if source.last_error == "no usable observation":
+            hint = f"{station} may not issue METARs: set weather.station to a station that does"
+        else:
+            host = urllib.parse.urlsplit(METAR_URL).hostname
+            hint = f"check the internet connection: ping -c 3 {host}"
+        return CheckResult("Weather", "WARN", f"METAR {station}: {source.last_error}", hint)
+    age_min = observation.age_s(now) / 60
+    summary = formatting.SEPARATOR.join(formatting.airport_parts(observation, None))
+    detail = f"METAR {station} from {age_min:.0f} min ago in {elapsed_ms:.0f} ms: {summary}"
+    if observation.age_s(now) > config.weather.max_age_s:
+        hint = f"{station} may not report at all hours: set weather.station to one that does"
+        return CheckResult("Weather", "WARN", f"{detail}; too old to show", hint)
+    return CheckResult("Weather", "OK", detail)
 
 
 @contextmanager

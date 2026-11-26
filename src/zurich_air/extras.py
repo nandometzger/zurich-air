@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 from zurich_air.config import Config
 from zurich_air.data.aircraft import Aircraft
@@ -56,6 +56,19 @@ MAX_EXTRA_S = WEATHER_TIMEOUT_S + ROUTE_FETCHES_PER_UPDATE * ROUTE_TIMEOUT_S
 ROUTE_MEMORY_S = 300.0  # as long as the track history remembers an aircraft
 
 RouteLookup = Callable[[str | None], Route | None]  # callsign -> scheduled route
+
+
+class RouteSource(Protocol):
+    """Where scheduled routes come from: a :class:`~zurich_air.data.routes.RouteTable`."""
+
+    def lookup(self, callsign: str | None) -> Route | None: ...
+
+
+@dataclass(frozen=True)
+class RouteLookupTable:
+    """A route source from a plain lookup function, such as a synthetic scene's routes."""
+
+    lookup: RouteLookup
 
 
 def check_route(
@@ -214,7 +227,7 @@ class Extras:
         config: Config,
         *,
         metar: MetarSource | None = None,
-        route_table: RouteTable | None = None,
+        route_table: RouteSource | None = None,
         runway_monitor: RunwayMonitor | None = None,
         memory: RouteMemory | None = None,
     ) -> None:
@@ -242,7 +255,8 @@ class Extras:
         if self.runway_monitor is not None:
             parts.append(f"runways in use at {self.config.airport.icao.upper()}")
         if self.route_table is not None:
-            parts.append(f"routes cached in {self.route_table.cache_dir}")
+            cache_dir = getattr(self.route_table, "cache_dir", None)
+            parts.append(f"routes cached in {cache_dir}" if cache_dir else "routes")
         return ", ".join(parts) or "none"
 
     def observe(

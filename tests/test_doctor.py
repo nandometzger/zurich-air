@@ -5,7 +5,7 @@ import io
 import json
 import logging
 import urllib.error
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -13,8 +13,17 @@ import pytest
 from zurich_air import __version__, doctor, schedule
 from zurich_air.app import FETCH_MARGIN_KM
 from zurich_air.cli import main
-from zurich_air.config import Config, DisplayConfig, LocationConfig, ProviderConfig
+from zurich_air.config import (
+    AirportConfig,
+    Config,
+    DisplayConfig,
+    LocationConfig,
+    ProviderConfig,
+    RoutesConfig,
+    WeatherConfig,
+)
 from zurich_air.data import provider
+from zurich_air.data.airports import Airport
 from zurich_air.data.provider import ADSB_LOL_KEY_ENV, radius_nm
 from zurich_air.doctor import CheckResult
 
@@ -424,6 +433,139 @@ def test_exit_status_fails_only_on_failures():
     assert doctor.exit_status([ok, fail]) == 1
 
 
+# Airport, route cache and weather
+
+
+def test_airport_is_found_with_its_runways():
+    result = doctor.check_airport(CONFIG)
+    assert result == CheckResult("Airport", "OK", "LSZH Zürich Airport, 3 runways")
+
+
+def test_unknown_airport_is_a_warning():
+    result = doctor.check_airport(Config(airport=AirportConfig(icao="ZZZZ")))
+    assert result.status == "WARN"
+    assert result.detail == "ZZZZ is not in the bundled airport data: runways in use are not shown"
+    assert "airport.icao" in result.hint
+
+
+def test_airport_code_and_position_must_agree():
+    result = doctor.check_airport(Config(airport=AirportConfig(icao="lsgg")))  # Geneva
+    assert result.status == "WARN"
+    assert result.detail == (
+        "LSGG Geneva International Airport, 1 runway, but 230 km from airport.latitude/longitude"
+    )
+
+
+def test_airport_without_runways(monkeypatch):
+    bare = Airport("LSZH", "ZRH", "Zürich Airport", "Zurich", "CH", 47.458, 8.548, 1417)
+    monkeypatch.setattr(doctor, "lookup", lambda icao: bare)
+    result = doctor.check_airport(CONFIG)
+    assert (result.status, result.detail) == (
+        "WARN",
+        "LSZH Zürich Airport, no runways: runways in use are not shown",
+    )
+    off = Config(airport=AirportConfig(runways_in_use=False))
+    assert doctor.check_airport(off).status == "OK"
+
+
+def with_cache(path) -> Config:
+    return dataclasses.replace(CONFIG, routes=RoutesConfig(cache_dir=str(path)))
+
+
+def test_route_cache_created_on_the_first_download(tmp_path):
+    result = doctor.check_route_cache(with_cache(tmp_path / "cache" / "routes"))
+    assert result.status == "OK"
+    assert result.detail == f"{tmp_path / 'cache' / 'routes'} (created on the first download)"
+
+
+def test_route_cache_counts_its_files(tmp_path):
+    for name in ("SWR-all.csv", "EDW-all.csv", "index.json"):
+        (tmp_path / name).write_text("")
+    result = doctor.check_route_cache(with_cache(tmp_path))
+    assert (result.status, result.detail) == ("OK", f"{tmp_path}, 2 airline files")
+
+
+def test_unwritable_route_cache_is_a_warning(tmp_path):
+    result = doctor.check_route_cache(with_cache(tmp_path / "r"), access=lambda path, mode: False)
+    assert result.status == "WARN"
+    assert result.detail == f"cannot write to {tmp_path}: no routes are shown"
+    assert "routes.cache_dir" in result.hint
+    (tmp_path / "file").write_text("")
+    blocked = doctor.check_route_cache(with_cache(tmp_path / "file" / "routes"))
+    assert blocked.status == "WARN" and "is not a directory" in blocked.detail
+
+
+def test_route_cache_is_skipped_without_routes():
+    config = dataclasses.replace(CONFIG, routes=RoutesConfig(enabled=False))
+    assert doctor.check_route_cache(config) == CheckResult(
+        "Route cache", "SKIP", "routes.enabled = false"
+    )
+
+
+METAR_FIXTURES = Path(__file__).parent / "fixtures" / "metar"
+OBSERVED = datetime(2026, 11, 26, 7, 20, tzinfo=UTC)  # in fixtures/metar/normal.json
+
+
+class MetarOpener:
+    """Answers like urllib.request.urlopen with the queued bodies or exceptions."""
+
+    def __init__(self, *outcomes) -> None:
+        self.outcomes = list(outcomes)
+        self.requests = []
+
+    def __call__(self, request, timeout=None):
+        self.requests.append((request, timeout))
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return io.BytesIO(outcome)
+
+
+def check_weather(*outcomes, config=CONFIG, now=OBSERVED + timedelta(minutes=12)):
+    opener = MetarOpener(*outcomes)
+    result = doctor.check_weather(config, now, opener=opener, timer=Clock())
+    return result, opener
+
+
+def metar_body(name: str = "normal") -> bytes:
+    return (METAR_FIXTURES / f"{name}.json").read_bytes()
+
+
+def test_weather_reports_the_observation():
+    result, opener = check_weather(metar_body())
+    assert result.status == "OK"
+    assert result.detail.startswith("METAR LSZH from 12 min ago in ")
+    assert result.detail.endswith(": 010° 5 KT · 0 °C · QNH 1012")
+    request, timeout = opener.requests[0]
+    assert "ids=LSZH" in request.full_url and timeout == 5.0
+
+
+def test_weather_failure_is_only_a_warning():
+    result, _ = check_weather(urllib.error.URLError(TimeoutError()))
+    assert (result.status, result.detail) == ("WARN", "METAR LSZH: timed out")
+    assert result.hint == "check the internet connection: ping -c 3 aviationweather.gov"
+
+
+def test_weather_station_without_reports():
+    config = Config(weather=WeatherConfig(station="LSZB"))
+    result, opener = check_weather(b"[]", config=config)
+    assert (result.status, result.detail) == ("WARN", "METAR LSZB: no usable observation")
+    assert "weather.station" in result.hint
+    assert "ids=LSZB" in opener.requests[0][0].full_url
+
+
+def test_old_weather_is_not_shown():
+    result, _ = check_weather(metar_body(), now=OBSERVED + timedelta(hours=2))
+    assert result.status == "WARN" and result.detail.endswith("; too old to show")
+
+
+def test_weather_is_skipped_when_off():
+    config = Config(weather=WeatherConfig(enabled=False))
+    assert doctor.check_weather(config, NOW) == CheckResult(
+        "Weather", "SKIP", "weather.enabled = false"
+    )
+
+
 # All checks together, and the command
 
 
@@ -444,7 +586,9 @@ def no_network(monkeypatch):
 def write_config(tmp_path, text=None) -> Path:
     path = tmp_path / "config.toml"
     out = json.dumps(str(tmp_path / "previews"))  # a valid TOML basic string, too
-    path.write_text(text if text is not None else f"[display]\noutput_dir = {out}\n")
+    cache = json.dumps(str(tmp_path / "cache" / "routes"))
+    default = f"[display]\noutput_dir = {out}\n\n[routes]\ncache_dir = {cache}\n"
+    path.write_text(text if text is not None else default)
     return path
 
 
@@ -457,18 +601,23 @@ def test_all_checks_in_order_offline(tmp_path, no_service, no_network):
         ("Clock", "OK"),
         ("Rendering", "OK"),
         ("Display", "OK"),
+        ("Airport", "OK"),
+        ("Route cache", "OK"),
         ("Source adsb.fi", "SKIP"),
         ("Source adsb.lol", "SKIP"),
+        ("Weather", "SKIP"),
         ("Service", "SKIP"),
     ]
-    assert results[6].detail == "--offline"
+    assert results[8].detail == results[10].detail == "--offline"
 
 
-def test_online_checks_ask_the_sources(tmp_path, no_service, monkeypatch):
+def test_online_checks_ask_the_sources_and_the_weather(tmp_path, no_service, monkeypatch):
     fetched = CheckResult("Source adsb.fi", "OK", "2 aircraft in 200 ms")
+    weather = CheckResult("Weather", "OK", "METAR LSZH from 10 min ago")
     monkeypatch.setattr(doctor, "check_sources", lambda config: [fetched])
+    monkeypatch.setattr(doctor, "check_weather", lambda config, now: weather)
     results = doctor.run_checks(write_config(tmp_path), now=NOW)
-    assert fetched in results
+    assert results.index(fetched) + 1 == results.index(weather)
 
 
 def test_checks_that_need_a_valid_config_are_skipped(tmp_path, no_service, no_network):
@@ -476,8 +625,9 @@ def test_checks_that_need_a_valid_config_are_skipped(tmp_path, no_service, no_ne
     results = doctor.run_checks(path, now=NOW)
     statuses = {r.name: (r.status, r.detail) for r in results}
     assert statuses["Config"] == ("FAIL", "unknown config key(s): nope")
-    for name in ("Time zone", "Rendering", "Display", "Data sources"):
+    for name in ("Time zone", "Rendering", "Display", "Airport", "Route cache", "Data sources"):
         assert statuses[name] == ("SKIP", "needs a valid config")
+    assert statuses["Weather"] == ("SKIP", "needs a valid config")
     assert statuses["Clock"][0] == "OK"
     assert doctor.exit_status(results) == 1
 
@@ -498,7 +648,7 @@ def test_command_prints_the_report(tmp_path, capsys, no_service, no_network):
     out = capsys.readouterr().out
     assert f"OK    Config           {path.resolve()}\n" in out
     assert "SKIP  Source adsb.fi   --offline\n" in out
-    assert out.rstrip().endswith("checks passed (3 skipped).")
+    assert out.rstrip().endswith("checks passed (4 skipped).")
 
 
 def test_command_exits_1_on_a_failure(tmp_path, capsys, no_service, no_network):
