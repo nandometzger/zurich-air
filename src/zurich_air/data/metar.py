@@ -35,7 +35,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
-from zurich_air.data.provider import USER_AGENT, Clock, Opener
+from zurich_air.data.provider import USER_AGENT, Clock, Opener, failure_reason
 
 log = logging.getLogger(__name__)
 
@@ -168,7 +168,7 @@ class MetarSource:
         except urllib.error.HTTPError as exc:
             return self._failed(f"HTTP {exc.code}")
         except (OSError, http.client.HTTPException, ValueError) as exc:
-            return self._failed(_describe(exc))
+            return self._failed(failure_reason(exc))
         if weather is None:
             return self._failed("no usable observation")
         if self.latest is None or weather.observed_at >= self.latest.observed_at:
@@ -193,21 +193,6 @@ class MetarSource:
         self.failures += 1
         log.warning("metar %s: %s; next try in %.0f s", self.station, reason, self.interval_s)
         return None
-
-
-def _describe(exc: BaseException) -> str:
-    """A short, log-friendly reason for a failed request."""
-    if isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, BaseException):
-        exc = exc.reason
-    if isinstance(exc, TimeoutError):
-        return "timed out"
-    if isinstance(exc, json.JSONDecodeError | UnicodeDecodeError):
-        return "malformed JSON"
-    if isinstance(exc, urllib.error.URLError):
-        text = f"network error: {exc.reason}"
-    else:
-        text = str(exc) or type(exc).__name__
-    return text if len(text) <= 80 else text[:77] + "..."
 
 
 def _str(value: Any) -> str | None:

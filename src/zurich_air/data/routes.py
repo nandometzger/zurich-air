@@ -54,8 +54,8 @@ from zurich_air.data.provider import (
     RATE_LIMIT_COOLDOWN_S,
     USER_AGENT,
     Opener,
-    _describe,
-    _retry_after_s,
+    failure_reason,
+    retry_after_seconds,
 )
 
 log = logging.getLogger(__name__)
@@ -299,7 +299,7 @@ class RouteTable:
             entry = _Entry(self._clock(), True, etag)
             log.debug("routes: %s: %d routes, %d bytes", name, count, len(body))
         except urllib.error.HTTPError as exc:
-            retry_after = _retry_after_s(exc.headers.get("Retry-After") if exc.headers else None)
+            retry_after = retry_after_seconds(exc.headers)
             if exc.code == 304 and old is not None:  # unchanged since the last download
                 entry = _Entry(self._clock(), old.found, old.etag)
             elif exc.code in (404, 410):  # no such airline (or not split this way)
@@ -313,14 +313,14 @@ class RouteTable:
                 self._back_off(f"HTTP {exc.code}", retry_after)
                 return None
         except (OSError, http.client.HTTPException, ValueError, zlib.error) as exc:
-            self._back_off(_describe(exc))
+            self._back_off(failure_reason(exc))
             return None
         self._errors = 0
         self._index[name] = entry
         try:
             self._save_index()
         except OSError as exc:  # the entry still counts for this run
-            log.warning("routes: cannot write the cache index: %s", _describe(exc))
+            log.warning("routes: cannot write the cache index: %s", failure_reason(exc))
         return entry
 
     def _back_off(self, reason: str, retry_after: float | None = None) -> None:

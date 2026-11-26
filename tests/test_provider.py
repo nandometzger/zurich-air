@@ -14,8 +14,10 @@ from zurich_air.data.provider import (
     ProviderError,
     ReadsbHttpSource,
     build_provider,
+    failure_reason,
     make_source,
     radius_nm,
+    retry_after_seconds,
 )
 
 BODY = json.dumps(
@@ -282,3 +284,40 @@ def test_failed_requests_are_counted_per_source():
     with pytest.raises(ProviderError):
         provider.fetch(47.4, 8.5, 90)
     assert provider.failure_counts() == {"primary": 2, "fallback": 1}
+
+
+def headers(**values: str) -> email.message.Message:
+    message = email.message.Message()
+    for name, value in values.items():
+        message[name.replace("_", "-")] = value
+    return message
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("120", 120.0), (" 30 ", 30.0), ("Wed, 21 Oct 2015 07:28:00 GMT", 0.0), ("soon", None)],
+)
+def test_retry_after_seconds(value, expected):
+    assert retry_after_seconds(headers(Retry_After=value)) == expected
+
+
+def test_retry_after_seconds_without_the_header():
+    assert retry_after_seconds(None) is None
+    assert retry_after_seconds(headers()) is None
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (urllib.error.URLError(TimeoutError()), "timed out"),
+        (
+            urllib.error.URLError("Name or service not known"),
+            "network error: Name or service not known",
+        ),
+        (json.JSONDecodeError("x", "", 0), "malformed JSON"),
+        (ValueError("x" * 100), "x" * 77 + "..."),
+        (OSError(), "OSError"),
+    ],
+)
+def test_failure_reason_is_short(exc, expected):
+    assert failure_reason(exc) == expected

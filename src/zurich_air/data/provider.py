@@ -147,7 +147,7 @@ class ReadsbHttpSource:
                 json.loads(body), source=self.label, fetched_at=datetime.now(UTC)
             )
         except urllib.error.HTTPError as exc:
-            retry_after = _retry_after_s(exc.headers.get("Retry-After") if exc.headers else None)
+            retry_after = retry_after_seconds(exc.headers)
             if exc.code == 429:
                 cooldown = RATE_LIMIT_COOLDOWN_S if retry_after is None else retry_after
                 self._cool_down(cooldown, "HTTP 429 rate limited")
@@ -155,7 +155,7 @@ class ReadsbHttpSource:
                 self._back_off(f"HTTP {exc.code}", retry_after)
             raise ProviderError(f"{self.label}: HTTP {exc.code}") from exc
         except (OSError, http.client.HTTPException, ValueError) as exc:
-            reason = _describe(exc)
+            reason = failure_reason(exc)
             self._back_off(reason)
             raise ProviderError(f"{self.label}: {reason}") from exc
 
@@ -257,9 +257,13 @@ def build_provider(
     )
 
 
-def _retry_after_s(value: str | None) -> float | None:
-    """Seconds from a Retry-After header (delta-seconds or HTTP date)."""
-    if not value:
+def retry_after_seconds(headers: Any) -> float | None:
+    """Seconds from the Retry-After header in *headers* (delta-seconds or HTTP date), if any.
+
+    *headers* is a response's (or HTTP error's) header mapping, or None.
+    """
+    value = headers.get("Retry-After") if headers is not None else None
+    if not isinstance(value, str) or not value.strip():
         return None
     value = value.strip()
     if value.isdigit():
@@ -283,7 +287,7 @@ def _quota(headers: Any) -> str | None:
     return f"{remaining}/{limit}" if limit else str(remaining)
 
 
-def _describe(exc: BaseException) -> str:
+def failure_reason(exc: BaseException) -> str:
     """A short, log-friendly reason for a failed request."""
     if isinstance(exc, urllib.error.URLError):
         if not isinstance(exc.reason, BaseException):
