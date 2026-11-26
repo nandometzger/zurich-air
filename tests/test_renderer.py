@@ -1,8 +1,10 @@
 import dataclasses
+import itertools
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pytest
+from PIL import Image, ImageDraw
 
 from zurich_air.cli import preview_scene
 from zurich_air.config import Config, DisplayConfig
@@ -11,9 +13,20 @@ from zurich_air.data.aircraft import Aircraft
 from zurich_air.data.metar import Weather
 from zurich_air.processing.route_check import VerifiedRoute
 from zurich_air.processing.runways import RunwayUse
-from zurich_air.rendering import flight_list, formatting, radar, renderer
-from zurich_air.rendering.fonts import ELLIPSIS, font, text_width
-from zurich_air.rendering.layout import FOOTER_GAP, MIN_SPACE, SMALL, TRACKING, Layout
+from zurich_air.rendering import flight_list, fonts, formatting, radar, renderer
+from zurich_air.rendering.fonts import cap_height, font, text_width
+from zurich_air.rendering.layout import (
+    CALLSIGN,
+    CALLSIGN_SPACE,
+    FOOTER_GAP,
+    LONG_CALLSIGN,
+    MIN_SPACE,
+    RADAR_GAP,
+    SMALL,
+    TEXT_INDENT,
+    TRACKING,
+    Layout,
+)
 from zurich_air.rendering.renderer import Renderer, Scene
 
 CONFIG = Config()
@@ -136,7 +149,7 @@ def test_second_line_shortens_by_meaning_never_with_an_ellipsis(monkeypatch):
     texts = drawn_texts(monkeypatch, scene)
     assert "→ JFK" in texts
     assert "Swiss · 777" in texts  # 777-300ER does not fit beside the route
-    assert not any(ELLIPSIS in t for t in texts)
+    assert not any("…" in t for t in texts)
 
 
 def test_long_operator_and_model_fall_back_to_the_model(monkeypatch):
@@ -150,11 +163,82 @@ def test_long_operator_and_model_fall_back_to_the_model(monkeypatch):
     assert "777-200LR" in texts
 
 
+# The widest labels, measured in B612 Bold at CALLSIGN size: airline callsigns (three
+# letters and four or five more, up to the eight characters ADS-B allows) set from the
+# widest glyphs, W and 8, and a long registration.
+WIDEST_LABELS = ["WWW888WW", "WWW8888W", "WWW88888", "WWW88WW", "WWW8888", "RA-89012"]
+# (feet, on ground): the widest altitudes of each kind in both unit systems, among them
+# 1000 FT, 6900 FT, FL497; 1 000 M, 10 000 M, 15 150 M; and GND.
+WIDEST_ALTITUDES = [(950, False), (4_800, False), (6_900, False), (3_270, False),
+                    (32_800, False), (36_000, False), (49_700, False), (1_400, True)]  # fmt: skip
+
+
+def test_first_line_shows_the_whole_label_beside_any_altitude(monkeypatch):
+    """The widest labels beside the widest altitudes: each label is drawn whole, on the
+    baseline and left edge of every row, clear of its altitude by CALLSIGN_SPACE."""
+    layout = Layout.for_size(CONFIG.display.width, CONFIG.display.height)
+    box = layout.flight_list
+    text_left = box.left + TEXT_INDENT
+    first_baseline = box.top + RADAR_GAP + cap_height(font(CALLSIGN, bold=True))
+    calls = []
+    original = flight_list.draw_text
+
+    def record(draw, x, baseline, text, face, **kwargs):
+        calls.append((x, baseline, text, face))
+        return original(draw, x, baseline, text, face, **kwargs)
+
+    monkeypatch.setattr(flight_list, "draw_text", record)
+    without_altitude = set()
+    for units, label, (feet, on_ground), rate in itertools.product(
+        ("aviation", "metric"), WIDEST_LABELS, WIDEST_ALTITUDES, (1500, -1500, 0)
+    ):
+        case = (label, units, feet, rate)
+        config = dataclasses.replace(CONFIG, display=DisplayConfig(altitude_units=units))
+        aircraft = Aircraft(
+            "4b0001", 47.40, 8.55, callsign=label, altitude_ft=feet, on_ground=on_ground,
+            vertical_rate_fpm=rate,
+        )  # fmt: skip
+        image = Image.new("1", (layout.width, layout.height), 255)
+        calls.clear()
+        flight_list.draw_flight_list(image, box, [aircraft], config)
+
+        drawn = {text: (x, baseline, face) for x, baseline, text, face in calls}
+        assert label in drawn, case  # whole, not cut
+        x, baseline, face = drawn[label]
+        assert (x, baseline) == (text_left, first_baseline), case
+        assert face.size in (CALLSIGN, LONG_CALLSIGN), case
+        right = x + text_width(label, face)
+        assert right <= box.right, case
+        # From its start to CALLSIGN_SPACE past its end, exactly the label's own pixels:
+        # none of them missing, none of the altitude's or the triangle's.
+        alone = Image.new("1", image.size, 255)
+        fonts.draw_text(ImageDraw.Draw(alone), x, baseline, label, face)
+        region = (x, baseline - CALLSIGN, right + CALLSIGN_SPACE, baseline + 3)
+        assert image.crop(region).tobytes() == alone.crop(region).tobytes(), case
+        if not set(drawn) & set(formatting.altitudes(feet, units, on_ground=on_ground)):
+            without_altitude.add((label, units, feet))
+    # Only the very widest callsign has no room for five metric digits beside it.
+    assert without_altitude == {("WWW888WW", "metric", ft) for ft in (32_800, 36_000, 49_700)}
+
+
+@pytest.mark.parametrize(
+    ("callsign", "feet", "rate", "altitude"),
+    [("SWR1850", 1_700, 1500, "1700 FT"), ("SWR245T", 4_800, 1800, "4800 FT"),
+     ("EZY39NR", 3_800, -900, "3800 FT")],
+)  # fmt: skip
+def test_seven_character_callsigns_keep_their_size_and_full_altitude(
+    callsign, feet, rate, altitude
+):
+    box = Layout.for_size(CONFIG.display.width, CONFIG.display.height).flight_list
+    aircraft = Aircraft("4b0001", 47.40, 8.55, callsign=callsign, altitude_ft=feet,
+                        vertical_rate_fpm=rate)  # fmt: skip
+    line = flight_list.fit_first_line(aircraft, "aviation", box.width - TEXT_INDENT)
+    assert (line.face.size, line.altitude, line.climbing) == (CALLSIGN, altitude, rate > 0)
+
+
 def test_fonts_use_basic_layout_engine_on_every_platform():
     # Guards against raqm/HarfBuzz shaping changing text widths between macOS and the Pi.
     from PIL import ImageFont
-
-    from zurich_air.rendering.fonts import font
 
     assert font(10).font.layout_engine == ImageFont.Layout.BASIC
 

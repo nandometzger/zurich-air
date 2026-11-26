@@ -1,3 +1,4 @@
+import itertools
 from datetime import UTC, datetime
 
 import pytest
@@ -7,7 +8,7 @@ from zurich_air.data.metar import Weather
 from zurich_air.processing.route_check import VerifiedRoute
 from zurich_air.processing.runways import RunwayUse
 from zurich_air.rendering import formatting
-from zurich_air.rendering.fonts import ELLIPSIS, fit_parts, font, text_width, truncate
+from zurich_air.rendering.fonts import fit_parts, font, text_width
 
 
 @pytest.mark.parametrize(
@@ -33,6 +34,27 @@ def test_altitude_metric_and_ground():
     assert formatting.altitude(2_000, "metric") == "610 M"
     assert formatting.altitude(1_400, on_ground=True) == "GND"
     assert formatting.altitude(None, on_ground=True) == "GND"
+
+
+@pytest.mark.parametrize(
+    ("feet", "units", "on_ground", "expected"),
+    [
+        (6_500, "aviation", False, ["6500 FT", "6500"]),
+        (0, "aviation", False, ["0 FT", "0"]),
+        (34_000, "aviation", False, ["FL340"]),  # nothing to give
+        (1_400, "aviation", True, ["GND"]),
+        (34_000, "metric", False, ["10 360 M", "10 360", "10360"]),
+        (2_000, "metric", False, ["610 M", "610"]),
+        (None, "aviation", False, []),
+    ],
+)
+def test_altitudes_give_way_but_keep_the_number(feet, units, on_ground, expected):
+    forms = formatting.altitudes(feet, units, on_ground=on_ground)
+    assert forms == expected
+    if forms:
+        assert forms[0] == formatting.altitude(feet, units, on_ground=on_ground)
+    widths = [text_width(form, font(10)) for form in forms]
+    assert all(wider > narrower for wider, narrower in itertools.pairwise(widths))
 
 
 @pytest.mark.parametrize(
@@ -88,16 +110,6 @@ def test_clock_uses_local_time():
 def test_distance():
     assert formatting.distance(80.0) == "80 KM"
     assert formatting.distance(37.5) == "37.5 KM"
-
-
-def test_truncate_fits_and_marks_cut():
-    face = font(10)
-    text = "Lufthansa City · CRJ900"
-    assert truncate(text, face, 500) == text
-    short = truncate(text, face, 60)
-    assert short.endswith(ELLIPSIS)
-    assert text_width(short, face) <= 60
-    assert truncate(text, face, 1) == ""
 
 
 def test_tracked_text_is_wider():

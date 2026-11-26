@@ -26,6 +26,7 @@ COLUMN_GAP = 14  # between the radar and the flight list
 # Type scale: pixel sizes at which B612 Regular has an even baseline (see fonts.py).
 TITLE = 13  # header, bold
 CALLSIGN = 14  # flight list, bold
+LONG_CALLSIGN = 13  # a callsign too long for CALLSIGN beside its altitude, bold
 SMALL = 10  # altitudes, secondary lines, footer
 TINY = 9  # radar labels, badge digits
 TRACKING = 1  # extra letter-spacing for uppercase labels
@@ -56,6 +57,7 @@ TEXT_INDENT = BADGE_W + 6
 TREND_SIZE = 4  # rows of the climb/descend triangle
 SYMBOL_GAP = 3  # between a symbol and its text
 MIN_SPACE = 8  # between the left and right parts of a line; also before a route
+CALLSIGN_SPACE = 4  # at least, between a callsign and its altitude; at 3 they run together
 LABEL_SPACE = 12  # before ARR / DEP, which would otherwise read as part of the model name
 
 # Footer.

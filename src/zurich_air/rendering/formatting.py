@@ -44,6 +44,25 @@ def altitude(
     return f"{hundreds * 100} FT"
 
 
+def altitudes(
+    altitude_ft: int | None, units: str = "aviation", *, on_ground: bool = False
+) -> list[str]:
+    """The altitude from most to least complete, for the first one that fits.
+
+    Only a long callsign beside it makes it give way: first the unit, then the space that
+    groups the thousands (``6500 FT`` → ``6500``; ``10 360 M`` → ``10 360`` → ``10360``).
+    The number itself never changes; flight levels and ``GND`` have nothing to give.
+    Empty when the altitude is unknown.
+    """
+    full = altitude(altitude_ft, units, on_ground=on_ground)
+    if full is None:
+        return []
+    number = full.rpartition(" ")[0]
+    if not number:  # FL340, GND
+        return [full]
+    return list(dict.fromkeys([full, number, number.replace(" ", "")]))
+
+
 def vertical_trend(rate_fpm: float | None) -> Trend | None:
     """Climb, descend or level, using a ±300 ft/min dead band."""
     if rate_fpm is None:

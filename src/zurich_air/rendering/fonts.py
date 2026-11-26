@@ -23,7 +23,6 @@ from typing import Literal
 from PIL import Image, ImageDraw, ImageFont
 
 FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
-ELLIPSIS = "…"
 MIDDLE_DOT = "·"
 
 
@@ -101,17 +100,6 @@ def draw_text(
             if not ch.isspace():
                 face.render(draw, x + origin, baseline, ch, fill)
     return width
-
-
-def truncate(text: str, face: Face, max_width: int, tracking: int = 0) -> str:
-    """*text* shortened with an ellipsis so that it fits into *max_width* pixels."""
-    if text_width(text, face, tracking) <= max_width:
-        return text
-    for end in range(len(text) - 1, 0, -1):
-        candidate = text[:end].rstrip(" ·-") + ELLIPSIS
-        if text_width(candidate, face, tracking) <= max_width:
-            return candidate
-    return ""
 
 
 def fit_parts(
