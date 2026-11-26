@@ -186,14 +186,22 @@ FORBIDDEN = {
     "adsb.lol API key value": r"ZURICH_AIR_ADSB_LOL_KEY=\w",
 }
 DEPLOY_FILES = [GUIDE, UNIT, *sorted((ROOT / "scripts").glob("*.sh"))]
+# Every Markdown page at the top (README, CONTRIBUTING, ROADMAP, …) and in docs/: what the
+# documentation shows as an example gets copied too, and it is published with the code.
+DOC_FILES = sorted({*ROOT.glob("*.md"), *(ROOT / "docs").rglob("*.md")})
 # Issue and pull request templates: whatever they show as an example gets copied.
 GITHUB_FILES = sorted(p for p in (ROOT / ".github").rglob("*") if p.is_file())
+SCANNED_FILES = sorted({*DEPLOY_FILES, *DOC_FILES, *GITHUB_FILES})
 
 
-@pytest.mark.parametrize(
-    "path", [*DEPLOY_FILES, *GITHUB_FILES], ids=lambda p: str(p.relative_to(ROOT))
-)
+def test_the_scan_covers_the_documentation():
+    scanned = {p.relative_to(ROOT).as_posix() for p in SCANNED_FILES}
+    assert {"README.md", "CONTRIBUTING.md", "docs/README.md", "docs/raspberry-pi.md"} <= scanned
+    assert {"system/zurich-air.service", "scripts/install-pi.sh"} <= scanned
+
+
+@pytest.mark.parametrize("path", SCANNED_FILES, ids=lambda p: p.relative_to(ROOT).as_posix())
 def test_no_machine_specific_paths_or_credentials(path):
     text = path.read_text()
     found = [name for name, pattern in FORBIDDEN.items() if re.search(pattern, text)]
-    assert not found, f"{path.name} contains: {', '.join(found)}"
+    assert not found, f"{path.relative_to(ROOT)} contains: {', '.join(found)}"
